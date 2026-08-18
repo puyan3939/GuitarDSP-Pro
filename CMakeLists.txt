@@ -30,6 +30,7 @@ target_sources(GuitarDSPPro PRIVATE
     dsp/amp/AmpStage.cpp dsp/amp/AmpEngine.cpp
     hq_preload/dsp/amp/AmpEngineHQ.cpp
     hq_preload/dsp/HQEffectsRack.cpp
+    hq_preload/dsp/cab/CabMicEngineHQ.cpp
     ui/MainView.cpp ui/NavigationBar.cpp
     ui/pages/AmpPage.cpp ui/pages/PedalPage.cpp ui/pages/CabPage.cpp ui/pages/EffectsPage.cpp ui/pages/SettingsPage.cpp
 )
@@ -40,7 +41,7 @@ target_link_libraries(GuitarDSPPro PRIVATE juce::juce_audio_utils juce::juce_dsp
 
 juce_add_console_app(GuitarDSPDSPTests PRODUCT_NAME "GuitarDSP-DSP-Tests")
 juce_generate_juce_header(GuitarDSPDSPTests)
-target_sources(GuitarDSPDSPTests PRIVATE tests/DSPCharacterSmoke.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/HQEffectsRack.cpp)
+target_sources(GuitarDSPDSPTests PRIVATE tests/DSPCharacterSmoke.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/HQEffectsRack.cpp hq_preload/dsp/cab/CabMicEngineHQ.cpp)
 target_include_directories(GuitarDSPDSPTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(GuitarDSPDSPTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(GuitarDSPDSPTests PRIVATE juce::juce_dsp juce::juce_audio_basics)
