@@ -2,6 +2,8 @@
 #include <JuceHeader.h>
 #include <array>
 #include <atomic>
+#include <memory>
+#include "../common/HQDSP.h"
 #include "amp/AmpEngineHQ.h"
 #include "pedals/PedalEngineHQ.h"
 #include "dynamics/DynamicsHQ.h"
@@ -24,7 +26,11 @@ public:
         std::atomic<float> drive{0.5f}, tone{0.5f}, levelDb{0.0f}, mix{1.0f};
         std::atomic<float> aux1{0.5f}, aux2{0.5f}, aux3{0.5f};
     };
-    struct GateControl { std::atomic<float> thresholdDb{-55}, rangeDb{-70}, attackMs{1}, holdMs{25}, releaseMs{120}, hysteresisDb{4}; };
+    struct GateControl {
+        std::atomic<float> thresholdDb{-55}, rangeDb{-60}, ratio{4};
+        std::atomic<float> attackMs{1}, holdMs{35}, releaseMs{180}, hysteresisDb{4};
+        std::atomic<float> sidechainHpHz{55}, sidechainLpHz{6500};
+    };
     struct StudioCompControl { std::atomic<float> thresholdDb{-18}, ratio{4}, attackMs{10}, releaseMs{120}, kneeDb{6}, makeupDb{0}, mix{1}; std::atomic<bool> rms{true}; };
     struct GuitarCompControl { std::atomic<float> sustain{.55f}, attack{.45f}, blend{.8f}, levelDb{0}; };
     struct ModulationControl { std::atomic<float> rateHz{.7f}, depth{.5f}, mix{.5f}, feedback{0}, manual{.5f}, shape{.5f}; };
