@@ -32,10 +32,12 @@ private:
     void copyDetectedMonoToStereo(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void applyInputGain(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void processLegacyAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
+    void processHQAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void applyStartupFadeAndLimiter(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
 
     juce::SmoothedValue<float> inputGain;
     juce::SmoothedValue<float> startupFade;
+    juce::AudioBuffer<float> ampWorkBuffer;
 
     AmpEngine ampEngine;
     guitardsp::hq::AmpEngineHQ hqAmpEngine;
