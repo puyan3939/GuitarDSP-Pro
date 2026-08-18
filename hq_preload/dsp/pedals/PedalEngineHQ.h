@@ -17,15 +17,17 @@ struct PedalParams
 class PedalEngineHQ
 {
 public:
-    PedalEngineHQ(): oversampling(3) {} // 8x for all nonlinear pedal topologies
+    PedalEngineHQ(): oversampling(3) {} // 8x for nonlinear pedal topologies
 
     void prepare(double fs,int maxBlock)
     {
         sampleRate=fs; maxSamples=maxBlock; oversampling.prepare(fs,maxBlock); work.setSize(1,maxBlock);
         const double internalFs=oversampling.getInternalSampleRate();
 
-        inputHP.prepare(internalFs); couplingHP1.prepare(internalFs); couplingHP2.prepare(internalFs);
+        inputHP.prepare(internalFs); inputLP.prepare(internalFs);
+        couplingHP1.prepare(internalFs); couplingHP2.prepare(internalFs);
         stageLP1.prepare(internalFs); stageLP2.prepare(internalFs); outputLP.prepare(internalFs);
+        postDc.prepare(fs);
         midPeak.reset();
 
         biasMemory.prepare(internalFs,3.5f);
@@ -39,8 +41,8 @@ public:
     void reset()
     {
         oversampling.reset();
-        inputHP.reset(); couplingHP1.reset(); couplingHP2.reset();
-        stageLP1.reset(); stageLP2.reset(); outputLP.reset(); midPeak.reset();
+        inputHP.reset(); inputLP.reset(); couplingHP1.reset(); couplingHP2.reset();
+        stageLP1.reset(); stageLP2.reset(); outputLP.reset(); postDc.reset(); midPeak.reset();
         biasMemory.reset(); supplyEnv.reset(); octaveDc.reset(); gateEnv.reset();
         transistorFeedback=0.0f; velcroGateOpen=false;
     }
@@ -63,6 +65,8 @@ public:
         work.setSize(1,n,false,false,true); work.copyFrom(0,0,mono,0,0,n);
         oversampling.process(work,[this](float x){return nonlinear(x);});
         mono.copyFrom(0,0,work,0,0,n);
+        auto* d=mono.getWritePointer(0);
+        for(int i=0;i<n;++i) d[i]=postDc.process(d[i]);
         mono.applyGain(dbToGain(params.levelDb));
     }
 
@@ -80,12 +84,27 @@ private:
         return h*asymSat((x*gain)/h,bias,asym);
     }
 
+    float conditionInput(float x) noexcept
+    {
+        return inputLP.process(inputHP.process(x));
+    }
+
     void updateFilters()
     {
         const float tone=juce::jlimit(0.0f,1.0f,params.tone);
         const float inputCut=juce::jlimit(20.0f,900.0f,params.lowCutHz);
 
         inputHP.setHz(inputCut);
+        const bool highGain = type==PedalType::hardDistortion || type==PedalType::germaniumFuzz ||
+                              type==PedalType::siliconFuzz || type==PedalType::octaveFuzz ||
+                              type==PedalType::velcroFuzz;
+        // Real transistor/diode pedals do not present infinite bandwidth at the first gain node.
+        // Limiting bandwidth before large nonlinear gain prevents ultrasonic/ADC hiss from being
+        // promoted into audible intermodulation while retaining guitar harmonics.
+        inputLP.setHz(highGain ? lerp(6500.0f,12500.0f,tone)
+                               : lerp(10000.0f,18000.0f,tone));
+        postDc.setHz(18.0f);
+
         couplingHP1.setHz(juce::jlimit(35.0f,1200.0f,inputCut*1.35f));
         couplingHP2.setHz(juce::jlimit(25.0f,1000.0f,inputCut*0.90f));
 
@@ -101,8 +120,7 @@ private:
 
     float cleanBoost(float x,float d)
     {
-        // Input buffer -> mild JFET/transistor gain stage -> output buffer.
-        x=inputHP.process(x);
+        x=conditionInput(x);
         const float q1=transistor(x,1.0f+2.4f*d,0.008f,0.16f,1.35f);
         const float coupled=couplingHP2.process(q1);
         const float buffer=transistor(coupled,1.0f+0.45f*d,0.0f,0.06f,1.8f);
@@ -111,8 +129,7 @@ private:
 
     float trebleBoost(float x,float d)
     {
-        // Rangemaster-like topology: input coupling HPF -> biased common-emitter -> output RC.
-        x=inputHP.process(x);
+        x=conditionInput(x);
         x=couplingHP1.process(x);
         const float dynamicBias=0.025f+0.05f*params.bias+0.025f*biasMemory.process(x);
         const float q1=transistor(x,1.4f+5.0f*d,dynamicBias,0.72f,0.82f);
@@ -121,8 +138,7 @@ private:
 
     float midOverdrive(float x,float d)
     {
-        // Op-amp gain block with mid pre-emphasis and diodes in the feedback path.
-        x=inputHP.process(x);
+        x=conditionInput(x);
         const float pre=midPeak.process(couplingHP1.process(x));
         const float opGain=1.2f+5.2f*d;
         const float op=pre*opGain;
@@ -133,8 +149,7 @@ private:
 
     float transparentOverdrive(float x,float d)
     {
-        // Parallel clean path + gain/clipping path, inspired by clean-blend overdrives.
-        const float clean=inputHP.process(x);
+        const float clean=conditionInput(x);
         const float dirtyIn=couplingHP1.process(clean);
         const float op=dirtyIn*(1.0f+4.2f*d);
         const float clipped=diodePair(op,0.60f-0.16f*d,0.04f);
@@ -145,8 +160,7 @@ private:
 
     float hardDistortion(float x,float d)
     {
-        // Gain stage -> AC coupling -> diode-to-ground style shunt clipping -> tone/output filter.
-        x=inputHP.process(x);
+        x=conditionInput(x);
         const float pre=transistor(x,1.4f+3.4f*d,0.012f,0.22f,1.25f);
         const float coupled=couplingHP1.process(pre);
         const float gain2=coupled*(1.5f+4.5f*d);
@@ -156,8 +170,7 @@ private:
 
     float germaniumFuzz(float x,float d)
     {
-        // Two-transistor Fuzz-Face-like interaction with bias memory and collector feedback.
-        x=inputHP.process(x);
+        x=conditionInput(x);
         const float memory=biasMemory.process(transistorFeedback);
         const float q1Bias=params.bias*0.22f+0.020f+0.035f*memory;
         const float q1In=x-transistorFeedback*(0.055f+0.095f*d);
@@ -172,8 +185,7 @@ private:
 
     float siliconFuzz(float x,float d)
     {
-        // Silicon two-stage fuzz: higher headroom and sharper transistor transfer than Ge.
-        x=inputHP.process(x);
+        x=conditionInput(x);
         const float q1In=x-transistorFeedback*(0.035f+0.070f*d);
         const float q1=transistor(q1In,1.8f+4.4f*d,0.010f+0.06f*params.bias,0.48f,0.94f);
         const float coupled=couplingHP1.process(q1);
@@ -185,8 +197,7 @@ private:
 
     float octaveFuzz(float x,float d)
     {
-        // Preamp -> balanced/full-wave rectifier -> DC blocking -> fuzz recovery stage.
-        x=inputHP.process(x);
+        x=conditionInput(x);
         const float pre=transistor(x,1.5f+3.8f*d,0.020f,0.50f,0.90f);
         const float rect=std::abs(pre);
         const float dc=octaveDc.process(rect);
@@ -199,8 +210,7 @@ private:
 
     float velcroFuzz(float x,float d)
     {
-        // Two-stage fuzz running from a deliberately collapsed virtual supply.
-        x=inputHP.process(x);
+        x=conditionInput(x);
         const float envelope=gateEnv.process(std::abs(x));
         const float demand=supplyEnv.process(envelope*(0.8f+1.2f*d));
         const float starve=juce::jlimit(0.0f,1.0f,params.starve);
@@ -244,8 +254,8 @@ private:
     NonlinearOversampler oversampling;
     juce::AudioBuffer<float> work;
 
-    OnePoleHP inputHP,couplingHP1,couplingHP2;
-    OnePoleLP stageLP1,stageLP2,outputLP;
+    OnePoleHP inputHP,couplingHP1,couplingHP2,postDc;
+    OnePoleLP inputLP,stageLP1,stageLP2,outputLP;
     Biquad midPeak;
     Slew biasMemory,supplyEnv,octaveDc,gateEnv;
 
