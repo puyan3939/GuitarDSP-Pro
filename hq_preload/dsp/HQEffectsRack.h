@@ -3,7 +3,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
-#include "../common/HQDSP.h"
+#include "common/HQDSP.h"
 #include "amp/AmpEngineHQ.h"
 #include "pedals/PedalEngineHQ.h"
 #include "dynamics/DynamicsHQ.h"
