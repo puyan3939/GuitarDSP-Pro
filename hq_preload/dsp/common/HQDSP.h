@@ -10,11 +10,18 @@ inline float lerp(float a, float b, float t) noexcept { return a + (b-a)*t; }
 inline float softSat(float x) noexcept { return std::tanh(x); }
 inline float asymSat(float x, float bias, float asymmetry) noexcept
 {
-    const float y = x + bias;
-    const float pos = std::tanh(y * (1.0f + 0.75f * asymmetry));
-    const float neg = std::tanh(y * (1.0f - 0.45f * asymmetry));
-    const float s = y >= 0.0f ? pos : neg;
-    return s - std::tanh(bias);
+    const float posScale = 1.0f + 0.75f * asymmetry;
+    const float negScale = 1.0f - 0.45f * asymmetry;
+    const auto transfer = [posScale, negScale](float v) noexcept
+    {
+        return v >= 0.0f ? std::tanh(v * posScale)
+                         : std::tanh(v * negScale);
+    };
+
+    // Preserve the biased/asymmetric transfer characteristic while guaranteeing
+    // exact digital silence: x == 0 must produce y == 0.  The previous baseline
+    // subtraction ignored the asymmetric branch gain and could leave a DC offset.
+    return transfer(x + bias) - transfer(bias);
 }
 
 struct OnePoleHP
