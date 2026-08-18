@@ -61,7 +61,7 @@ void EffectsPage::updateModeHints()
 void EffectsPage::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colour::fromRGB(12,16,21));g.setColour(juce::Colour::fromRGB(28,34,42));g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(10.0f),12.0f,1.0f);
-    g.setColour(juce::Colour::fromRGB(38,45,54));auto r=getLocalBounds().reduced(22);r.removeFromTop(46);auto h=(r.getHeight()-20)/3;g.fillRoundedRectangle(r.removeFromTop(h).toFloat(),8,1);r.removeFromTop(10);g.fillRoundedRectangle(r.removeFromTop(h).toFloat(),8,1);r.removeFromTop(10);g.fillRoundedRectangle(r.toFloat(),8,1);
+    g.setColour(juce::Colour::fromRGB(38,45,54));auto r=getLocalBounds().reduced(22);r.removeFromTop(46);auto h=(r.getHeight()-20)/3;g.fillRoundedRectangle(r.removeFromTop(h).toFloat(),8.0f);r.removeFromTop(10);g.fillRoundedRectangle(r.removeFromTop(h).toFloat(),8.0f);r.removeFromTop(10);g.fillRoundedRectangle(r.toFloat(),8.0f);
     g.setColour(juce::Colour::fromRGB(158,167,178));g.setFont(10.5f);
     auto drawNames=[&g](std::initializer_list<juce::Slider*> sliders){for(auto* s:sliders)g.drawText(s->getName(),s->getBounds().withHeight(15),juce::Justification::centredTop);};
     drawNames({&modRate,&modDepth,&modMix,&modFeedback,&modManual,&modShape});drawNames({&delayTime,&delayFeedback,&delayMix,&delayLowCut,&delayHighCut,&delayDrive,&delayWow,&delayFlutter,&delayAge});drawNames({&reverbSize,&reverbDecay,&reverbDamping,&reverbPreDelay,&reverbMix,&reverbMod,&reverbDrip});
