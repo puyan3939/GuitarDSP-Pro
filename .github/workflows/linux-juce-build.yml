@@ -26,10 +26,11 @@ jobs:
             build-essential cmake ninja-build git pkg-config \
             libasound2-dev \
             libjack-jackd2-dev \
-            libfreetype6-dev \
+            libfontconfig1-dev \
+            libfreetype-dev \
             libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
-            libxinerama-dev libxrandr-dev libxrender-dev \
-            libglu1-mesa-dev mesa-common-dev
+            libxinerama-dev libxrandr-dev libxrender-dev libxi-dev \
+            libglu1-mesa-dev mesa-common-dev libegl-dev
 
       - name: Checkout JUCE 9.0.0
         uses: actions/checkout@v4
