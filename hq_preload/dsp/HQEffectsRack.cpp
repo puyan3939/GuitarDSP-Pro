@@ -3,21 +3,25 @@
 namespace guitardsp::hq {
 
 void HQEffectsRack::prepare(double sampleRate, int maximumBlockSize) {
-    for (auto& pedal : pedals) pedal.prepare(sampleRate, maximumBlockSize);
-    noiseGate.prepare(sampleRate);
-    studioComp.prepare(sampleRate);
-    guitarComp.prepare(sampleRate);
-    chorus.prepare(sampleRate, maximumBlockSize);
-    flanger.prepare(sampleRate, maximumBlockSize);
-    phaser.prepare(sampleRate);
-    delayFx.prepare(sampleRate, maximumBlockSize);
-    reverbFx.prepare(sampleRate);
+    for (int ch = 0; ch < stereoChannels; ++ch) {
+        for (auto& pedal : pedals[(size_t)ch]) pedal.prepare(sampleRate, maximumBlockSize);
+        noiseGate[(size_t)ch].prepare(sampleRate);
+        studioComp[(size_t)ch].prepare(sampleRate);
+        guitarComp[(size_t)ch].prepare(sampleRate);
+        chorus[(size_t)ch].prepare(sampleRate, maximumBlockSize);
+        flanger[(size_t)ch].prepare(sampleRate, maximumBlockSize);
+        phaser[(size_t)ch].prepare(sampleRate);
+        delayFx[(size_t)ch].prepare(sampleRate, maximumBlockSize);
+        reverbFx[(size_t)ch].prepare(sampleRate);
+    }
     reset();
 }
 
 void HQEffectsRack::reset() {
-    for (auto& pedal : pedals) pedal.reset();
-    phaser.reset();
+    for (int ch = 0; ch < stereoChannels; ++ch) {
+        for (auto& pedal : pedals[(size_t)ch]) pedal.reset();
+        phaser[(size_t)ch].reset();
+    }
 }
 
 void HQEffectsRack::updateDynamicParameters() {
@@ -26,7 +30,6 @@ void HQEffectsRack::updateDynamicParameters() {
     g.attackMs = gateControls.attackMs.load();
     g.holdMs = gateControls.holdMs.load();
     g.releaseMs = gateControls.releaseMs.load();
-    noiseGate.setParameters(g);
 
     StudioCompressor::Params c;
     c.thresholdDb = studioControls.thresholdDb.load();
@@ -36,24 +39,26 @@ void HQEffectsRack::updateDynamicParameters() {
     c.kneeDb = studioControls.kneeDb.load();
     c.makeupDb = studioControls.makeupDb.load();
     c.mix = studioControls.mix.load();
-    studioComp.setParameters(c);
 
     GuitarCompressor::Params gc;
     gc.sustain = guitarControls.sustain.load();
     gc.attack = guitarControls.attack.load();
     gc.blend = guitarControls.blend.load();
     gc.levelDb = guitarControls.levelDb.load();
-    guitarComp.setParameters(gc);
+
+    for (int ch = 0; ch < stereoChannels; ++ch) {
+        noiseGate[(size_t)ch].setParameters(g);
+        studioComp[(size_t)ch].setParameters(c);
+        guitarComp[(size_t)ch].setParameters(gc);
+    }
 }
 
 void HQEffectsRack::processPreAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples) {
     updateDynamicParameters();
     applyDynamics(buffer, startSample, numSamples);
 
-    // PedalEngineHQ is intentionally mono. Process each channel through a
-    // temporary mono view until the pedal engine owns independent per-channel state.
     juce::AudioBuffer<float> mono(1, numSamples);
-    const int channels = juce::jmin(2, buffer.getNumChannels());
+    const int channels = juce::jmin(stereoChannels, buffer.getNumChannels());
     for (int slot = 0; slot < pedalSlots; ++slot) {
         auto& control = pedalControls[(size_t)slot];
         if (!control.enabled.load(std::memory_order_relaxed)) continue;
@@ -73,10 +78,11 @@ void HQEffectsRack::processPreAmp(juce::AudioBuffer<float>& buffer, int startSam
         p.starve = juce::jlimit(0.0f, 1.0f, control.aux2.load());
         p.gate = juce::jlimit(0.0f, 1.0f, control.aux3.load());
 
-        auto& pedal = pedals[(size_t)slot];
-        pedal.setType(static_cast<PedalType>(juce::jlimit(0, 8, control.model.load())));
-        pedal.setParameters(p);
+        const auto type = static_cast<PedalType>(juce::jlimit(0, 8, control.model.load()));
         for (int ch = 0; ch < channels; ++ch) {
+            auto& pedal = pedals[(size_t)ch][(size_t)slot];
+            pedal.setType(type);
+            pedal.setParameters(p);
             mono.copyFrom(0, 0, buffer, ch, startSample, numSamples);
             pedal.process(mono);
             buffer.copyFrom(ch, startSample, mono, 0, 0, numSamples);
@@ -87,14 +93,14 @@ void HQEffectsRack::processPreAmp(juce::AudioBuffer<float>& buffer, int startSam
 void HQEffectsRack::applyDynamics(juce::AudioBuffer<float>& buffer, int startSample, int numSamples) {
     const auto mode = getDynamicsMode();
     if (mode == DynamicsMode::off) return;
-    const int channels = juce::jmin(2, buffer.getNumChannels());
+    const int channels = juce::jmin(stereoChannels, buffer.getNumChannels());
     for (int ch = 0; ch < channels; ++ch) {
         auto* d = buffer.getWritePointer(ch, startSample);
         for (int i = 0; i < numSamples; ++i) {
             switch (mode) {
-                case DynamicsMode::gate: d[i] = noiseGate.process(d[i]); break;
-                case DynamicsMode::studioCompressor: d[i] = studioComp.process(d[i]); break;
-                case DynamicsMode::guitarCompressor: d[i] = guitarComp.process(d[i]); break;
+                case DynamicsMode::gate: d[i] = noiseGate[(size_t)ch].process(d[i]); break;
+                case DynamicsMode::studioCompressor: d[i] = studioComp[(size_t)ch].process(d[i]); break;
+                case DynamicsMode::guitarCompressor: d[i] = guitarComp[(size_t)ch].process(d[i]); break;
                 default: break;
             }
         }
@@ -108,7 +114,6 @@ void HQEffectsRack::updatePostParameters() {
     chorusParams.centreMs = 7.0f + 9.0f * juce::jlimit(0.0f, 1.0f, modControls.manual.load());
     chorusParams.feedback = juce::jlimit(-0.85f, 0.85f, modControls.feedback.load());
     chorusParams.mix = juce::jlimit(0.0f, 1.0f, modControls.mix.load());
-    chorus.setParameters(chorusParams);
 
     FlangerHQ::Params flangerParams;
     flangerParams.rateHz = modControls.rateHz.load();
@@ -116,7 +121,6 @@ void HQEffectsRack::updatePostParameters() {
     flangerParams.manualMs = 0.6f + 5.0f * juce::jlimit(0.0f, 1.0f, modControls.manual.load());
     flangerParams.feedback = juce::jlimit(-0.92f, 0.92f, modControls.feedback.load());
     flangerParams.mix = juce::jlimit(0.0f, 1.0f, modControls.mix.load());
-    flanger.setParameters(flangerParams);
 
     PhaserHQ::Params phaserParams;
     phaserParams.rateHz = modControls.rateHz.load();
@@ -124,46 +128,39 @@ void HQEffectsRack::updatePostParameters() {
     phaserParams.feedback = juce::jlimit(-0.85f, 0.85f, modControls.feedback.load());
     phaserParams.mix = juce::jlimit(0.0f, 1.0f, modControls.mix.load());
     phaserParams.stages = 6;
-    phaser.setParameters(phaserParams);
 
     DelayHQ::Params d;
     d.type = static_cast<DelayType>(juce::jlimit(0, 2, delayControls.flavor.load()));
-    d.timeMs = delayControls.timeMs.load();
-    d.feedback = delayControls.feedback.load();
-    d.mix = delayControls.mix.load();
-    d.lowCutHz = delayControls.lowCutHz.load();
-    d.highCutHz = delayControls.highCutHz.load();
-    d.drive = delayControls.drive.load();
-    d.wow = delayControls.wow.load();
-    d.flutter = delayControls.flutter.load();
-    d.age = delayControls.age.load();
-    delayFx.setParameters(d);
+    d.timeMs = delayControls.timeMs.load(); d.feedback = delayControls.feedback.load(); d.mix = delayControls.mix.load();
+    d.lowCutHz = delayControls.lowCutHz.load(); d.highCutHz = delayControls.highCutHz.load(); d.drive = delayControls.drive.load();
+    d.wow = delayControls.wow.load(); d.flutter = delayControls.flutter.load(); d.age = delayControls.age.load();
 
     ReverbHQ::Params r;
     r.type = static_cast<ReverbType>(juce::jlimit(0, 3, reverbControls.flavor.load()));
-    r.size = reverbControls.size.load();
-    r.decay = reverbControls.decay.load();
-    r.damping = reverbControls.damping.load();
-    r.preDelayMs = reverbControls.preDelayMs.load();
-    r.mix = reverbControls.mix.load();
-    r.mod = reverbControls.mod.load();
-    r.drip = reverbControls.drip.load();
-    reverbFx.setParameters(r);
+    r.size = reverbControls.size.load(); r.decay = reverbControls.decay.load(); r.damping = reverbControls.damping.load();
+    r.preDelayMs = reverbControls.preDelayMs.load(); r.mix = reverbControls.mix.load(); r.mod = reverbControls.mod.load(); r.drip = reverbControls.drip.load();
+
+    for (int ch = 0; ch < stereoChannels; ++ch) {
+        chorus[(size_t)ch].setParameters(chorusParams);
+        flanger[(size_t)ch].setParameters(flangerParams);
+        phaser[(size_t)ch].setParameters(phaserParams);
+        delayFx[(size_t)ch].setParameters(d);
+        reverbFx[(size_t)ch].setParameters(r);
+    }
 }
 
 void HQEffectsRack::processPostAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples) {
     updatePostParameters();
     applyModulation(buffer, startSample, numSamples);
-    const int channels = juce::jmin(2, buffer.getNumChannels());
-    const bool useDelay = isDelayEnabled();
-    const bool useReverb = isReverbEnabled();
+    const int channels = juce::jmin(stereoChannels, buffer.getNumChannels());
+    const bool useDelay = isDelayEnabled(), useReverb = isReverbEnabled();
     if (!useDelay && !useReverb) return;
     for (int ch = 0; ch < channels; ++ch) {
         auto* data = buffer.getWritePointer(ch, startSample);
         for (int i = 0; i < numSamples; ++i) {
             float x = data[i];
-            if (useDelay) x = delayFx.process(x);
-            if (useReverb) x = reverbFx.process(x);
+            if (useDelay) x = delayFx[(size_t)ch].process(x);
+            if (useReverb) x = reverbFx[(size_t)ch].process(x);
             data[i] = x;
         }
     }
@@ -172,14 +169,14 @@ void HQEffectsRack::processPostAmp(juce::AudioBuffer<float>& buffer, int startSa
 void HQEffectsRack::applyModulation(juce::AudioBuffer<float>& buffer, int startSample, int numSamples) {
     const auto mode = getModulationMode();
     if (mode == ModulationMode::off) return;
-    const int channels = juce::jmin(2, buffer.getNumChannels());
+    const int channels = juce::jmin(stereoChannels, buffer.getNumChannels());
     for (int ch = 0; ch < channels; ++ch) {
         auto* data = buffer.getWritePointer(ch, startSample);
         for (int i = 0; i < numSamples; ++i) {
             switch (mode) {
-                case ModulationMode::chorus: data[i] = chorus.process(data[i]); break;
-                case ModulationMode::flanger: data[i] = flanger.process(data[i]); break;
-                case ModulationMode::phaser: data[i] = phaser.process(data[i]); break;
+                case ModulationMode::chorus: data[i] = chorus[(size_t)ch].process(data[i]); break;
+                case ModulationMode::flanger: data[i] = flanger[(size_t)ch].process(data[i]); break;
+                case ModulationMode::phaser: data[i] = phaser[(size_t)ch].process(data[i]); break;
                 case ModulationMode::tremolo:
                 case ModulationMode::vibrato:
                 default: break;
