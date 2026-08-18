@@ -22,6 +22,14 @@ bool sane(const juce::AudioBuffer<float>& b, float maxAbs=20.0f) {
     return true;
 }
 
+float channelRms(const juce::AudioBuffer<float>& b, int ch) {
+    if (ch < 0 || ch >= b.getNumChannels()) return 0.0f;
+    double s=0.0;
+    const auto* d=b.getReadPointer(ch);
+    for(int i=0;i<b.getNumSamples();++i) s+=(double)d[i]*d[i];
+    return b.getNumSamples()>0?(float)std::sqrt(s/(double)b.getNumSamples()):0.0f;
+}
+
 float rms(const juce::AudioBuffer<float>& b) {
     double s=0.0; int n=0;
     for(int ch=0;ch<b.getNumChannels();++ch){auto*d=b.getReadPointer(ch);for(int i=0;i<b.getNumSamples();++i){s+=(double)d[i]*d[i];++n;}}
@@ -65,8 +73,6 @@ int main() {
     ok &= require(sane(b),"Studio compressor finite");
     rack.setDynamicsMode(guitardsp::hq::HQEffectsRack::DynamicsMode::off);
 
-    // Current HQ implementation has chorus/flanger/phaser. Tremolo and vibrato
-    // remain intentionally bypassed until their dedicated DSP models exist.
     for(int mode=1;mode<=3;++mode){
         rack.reset();
         rack.setModulationMode((guitardsp::hq::HQEffectsRack::ModulationMode)mode);
@@ -77,19 +83,33 @@ int main() {
     }
     rack.setModulationMode(guitardsp::hq::HQEffectsRack::ModulationMode::off);
 
-    rack.reset();
-    rack.setDelayEnabled(true);
-    fillSine(b);
-    rack.processPostAmp(b,0,block);
-    ok &= require(sane(b),"Delay finite");
-    rack.setDelayEnabled(false);
+    rack.reset(); rack.setDelayEnabled(true); fillSine(b); rack.processPostAmp(b,0,block);
+    ok &= require(sane(b),"Delay finite"); rack.setDelayEnabled(false);
+    rack.reset(); rack.setReverbEnabled(true); fillSine(b); rack.processPostAmp(b,0,block);
+    ok &= require(sane(b),"Reverb finite"); rack.setReverbEnabled(false);
 
-    rack.reset();
-    rack.setReverbEnabled(true);
-    fillSine(b);
-    rack.processPostAmp(b,0,block);
-    ok &= require(sane(b),"Reverb finite");
-    rack.setReverbEnabled(false);
+    // Stateful stereo processors must not leak one channel's history into the other.
+    guitardsp::hq::HQEffectsRack isoRack; isoRack.prepare(sr,block);
+    isoRack.delayControl().timeMs.store(1.0f);
+    isoRack.delayControl().mix.store(1.0f);
+    isoRack.delayControl().feedback.store(0.0f);
+    isoRack.setDelayEnabled(true);
+    b.clear(); b.setSample(0,0,0.5f);
+    isoRack.processPostAmp(b,0,block);
+    ok &= require(channelRms(b,1) < 1.0e-8f,"Delay L/R state isolation");
+
+    guitardsp::hq::HQEffectsRack reverbIso; reverbIso.prepare(sr,block);
+    reverbIso.reverbControl().preDelayMs.store(0.0f);
+    reverbIso.reverbControl().mix.store(1.0f);
+    reverbIso.setReverbEnabled(true);
+    b.clear(); b.setSample(0,0,0.5f);
+    reverbIso.processPostAmp(b,0,block);
+    ok &= require(channelRms(b,1) < 1.0e-8f,"Reverb L/R state isolation");
+
+    // Silence should remain finite and bounded through the complete bypass-default rack.
+    guitardsp::hq::HQEffectsRack silentRack; silentRack.prepare(sr,block);
+    b.clear(); silentRack.processPreAmp(b,0,block); silentRack.processPostAmp(b,0,block);
+    ok &= require(sane(b,1.0f) && rms(b) < 1.0e-9f,"Bypass rack silence stability");
 
     return ok ? 0 : 1;
 }
