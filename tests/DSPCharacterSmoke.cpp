@@ -73,13 +73,19 @@ int main() {
     ok &= require(sane(b),"Studio compressor finite");
     rack.setDynamicsMode(guitardsp::hq::HQEffectsRack::DynamicsMode::off);
 
-    for(int mode=1;mode<=3;++mode){
+    rack.modulationControl().rateHz.store(4.0f);
+    rack.modulationControl().depth.store(0.7f);
+    rack.modulationControl().mix.store(1.0f);
+    for(int mode=1;mode<=5;++mode){
         rack.reset();
         rack.setModulationMode((guitardsp::hq::HQEffectsRack::ModulationMode)mode);
         fillSine(b);
+        const float before=rms(b);
         rack.processPostAmp(b,0,block);
-        const std::string name="Modulation mode "+std::to_string(mode)+" finite";
-        ok &= require(sane(b),name.c_str());
+        const std::string finiteName="Modulation mode "+std::to_string(mode)+" finite";
+        const std::string activeName="Modulation mode "+std::to_string(mode)+" changes signal";
+        ok &= require(sane(b),finiteName.c_str());
+        ok &= require(std::abs(rms(b)-before)>1.0e-7f,activeName.c_str());
     }
     rack.setModulationMode(guitardsp::hq::HQEffectsRack::ModulationMode::off);
 
@@ -88,7 +94,6 @@ int main() {
     rack.reset(); rack.setReverbEnabled(true); fillSine(b); rack.processPostAmp(b,0,block);
     ok &= require(sane(b),"Reverb finite"); rack.setReverbEnabled(false);
 
-    // Stateful stereo processors must not leak one channel's history into the other.
     guitardsp::hq::HQEffectsRack isoRack; isoRack.prepare(sr,block);
     isoRack.delayControl().timeMs.store(1.0f);
     isoRack.delayControl().mix.store(1.0f);
@@ -106,7 +111,6 @@ int main() {
     reverbIso.processPostAmp(b,0,block);
     ok &= require(channelRms(b,1) < 1.0e-8f,"Reverb L/R state isolation");
 
-    // Silence should remain finite and bounded through the complete bypass-default rack.
     guitardsp::hq::HQEffectsRack silentRack; silentRack.prepare(sr,block);
     b.clear(); silentRack.processPreAmp(b,0,block); silentRack.processPostAmp(b,0,block);
     ok &= require(sane(b,1.0f) && rms(b) < 1.0e-9f,"Bypass rack silence stability");

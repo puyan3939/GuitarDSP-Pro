@@ -34,6 +34,7 @@ private:
 
     juce::Slider inputGainSlider;
     juce::Slider outputGainSlider;
+    juce::ComboBox ampModeSelector;
     juce::ToggleButton bypassButton { "BYPASS" };
     juce::Label inputLabel;
     juce::Label outputLabel;

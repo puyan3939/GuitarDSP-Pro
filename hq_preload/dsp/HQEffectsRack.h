@@ -70,6 +70,8 @@ private:
     std::array<ChorusHQ, stereoChannels> chorus;
     std::array<FlangerHQ, stereoChannels> flanger;
     std::array<PhaserHQ, stereoChannels> phaser;
+    std::array<TremoloHQ, stereoChannels> tremolo;
+    std::array<VibratoHQ, stereoChannels> vibrato;
     ModulationControl modControls;
     std::array<DelayHQ, stereoChannels> delayFx;
     std::array<ReverbHQ, stereoChannels> reverbFx;

@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: guitardsp-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: JUCE 9.0.0 / gcc / full
@@ -17,7 +21,6 @@ jobs:
     steps:
       - name: Checkout GuitarDSP-Pro
         uses: actions/checkout@v5
-
       - name: Install JUCE Linux dependencies
         run: |
           sudo apt-get update
@@ -28,7 +31,6 @@ jobs:
             libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
             libxinerama-dev libxrandr-dev libxrender-dev libxi-dev \
             libglu1-mesa-dev mesa-common-dev libegl-dev
-
       - name: Cache compiler objects
         uses: actions/cache@v4
         with:
@@ -36,7 +38,6 @@ jobs:
           key: full-ccache-${{ runner.os }}-juce900-${{ hashFiles('CMakeLists.txt', 'src/**', 'engine/**', 'dsp/**', 'ui/**', 'hq_preload/**', 'tests/**') }}
           restore-keys: |
             full-ccache-${{ runner.os }}-juce900-
-
       - name: Checkout JUCE 9.0.0
         uses: actions/checkout@v5
         with:
@@ -44,7 +45,6 @@ jobs:
           ref: 9.0.0
           path: _deps/JUCE
           fetch-depth: 1
-
       - name: Configure
         env:
           CC: gcc
@@ -58,17 +58,13 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DGUITARDSP_JUCE_PATH="${{ github.workspace }}/_deps/JUCE"
-
       - name: Build app and DSP tests
         run: cmake --build build --parallel 4
-
       - name: Run DSP smoke tests
         run: ctest --test-dir build --output-on-failure
-
       - name: Show resulting binaries
         if: success()
         run: find build -maxdepth 7 -type f -perm -111 -print || true
-
       - name: Compiler cache stats
         if: always()
         run: ccache --show-stats || true

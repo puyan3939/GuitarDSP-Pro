@@ -12,15 +12,12 @@ MainView::MainView(AudioEngine& engine)
     addChildComponent(effectsPage);
     addChildComponent(settingsPage);
 
-    navigation.onPageSelected = [this](NavigationBar::Page page)
-    {
-        showPage(page);
-    };
+    navigation.onPageSelected = [this](NavigationBar::Page page){ showPage(page); };
 
     auto configureGainSlider = [](juce::Slider& slider, double min, double max, double initial)
     {
         slider.setSliderStyle(juce::Slider::LinearHorizontal);
-        slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 70, 24);
+        slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 64, 24);
         slider.setRange(min, max, 0.1);
         slider.setValue(initial, juce::dontSendNotification);
         slider.setNumDecimalPlacesToDisplay(1);
@@ -29,6 +26,11 @@ MainView::MainView(AudioEngine& engine)
 
     configureGainSlider(inputGainSlider, -36.0, 18.0, -6.0);
     configureGainSlider(outputGainSlider, -60.0, 6.0, -18.0);
+
+    ampModeSelector.addItem("LEGACY 20", 1);
+    ampModeSelector.addItem("HQ 20", 2);
+    ampModeSelector.setSelectedId(1, juce::dontSendNotification);
+    ampModeSelector.setTooltip("A/B the editable 20-stage amp and the higher-detail HQ model");
 
     inputLabel.setText("INPUT", juce::dontSendNotification);
     outputLabel.setText("OUTPUT", juce::dontSendNotification);
@@ -42,82 +44,68 @@ MainView::MainView(AudioEngine& engine)
 
     addAndMakeVisible(inputGainSlider);
     addAndMakeVisible(outputGainSlider);
+    addAndMakeVisible(ampModeSelector);
     addAndMakeVisible(bypassButton);
     addAndMakeVisible(inputLabel);
     addAndMakeVisible(outputLabel);
     addAndMakeVisible(inputMeterLabel);
     addAndMakeVisible(outputMeterLabel);
 
-    inputGainSlider.onValueChange = [this]
+    inputGainSlider.onValueChange = [this]{ audioEngine.setInputGainDb((float) inputGainSlider.getValue()); };
+    outputGainSlider.onValueChange = [this]{ audioEngine.setOutputGainDb((float) outputGainSlider.getValue()); };
+    ampModeSelector.onChange = [this]
     {
-        audioEngine.setInputGainDb((float) inputGainSlider.getValue());
+        audioEngine.setAmpMode(ampModeSelector.getSelectedId() == 2 ? SignalChain::AmpMode::hq : SignalChain::AmpMode::legacy);
     };
-
-    outputGainSlider.onValueChange = [this]
-    {
-        audioEngine.setOutputGainDb((float) outputGainSlider.getValue());
-    };
-
-    bypassButton.onClick = [this]
-    {
-        audioEngine.setBypass(bypassButton.getToggleState());
-    };
+    bypassButton.onClick = [this]{ audioEngine.setBypass(bypassButton.getToggleState()); };
 
     audioEngine.setInputGainDb((float) inputGainSlider.getValue());
     audioEngine.setOutputGainDb((float) outputGainSlider.getValue());
+    audioEngine.setAmpMode(SignalChain::AmpMode::legacy);
 
     showPage(NavigationBar::Page::amp);
     startTimerHz(15);
 }
 
-MainView::~MainView()
-{
-    stopTimer();
-}
+MainView::~MainView(){ stopTimer(); }
 
 void MainView::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colour::fromRGB(9, 12, 16));
-
     auto r = getLocalBounds();
     auto header = r.removeFromTop(76);
     g.setColour(juce::Colour::fromRGB(14, 18, 24));
     g.fillRect(header);
-
     g.setColour(juce::Colours::white);
     g.setFont(juce::Font(24.0f, juce::Font::bold));
     g.drawText("GuitarDSP-Pro", header.removeFromLeft(250).reduced(20, 0), juce::Justification::centredLeft);
-
     g.setColour(juce::Colour::fromRGB(222, 110, 58));
     g.setFont(juce::Font(13.0f));
-    g.drawText("PHASE 0 / SAFE SHELL", header.removeFromLeft(190), juce::Justification::centredLeft);
+    g.drawText("AMP LAB / SAFE OUTPUT", header.removeFromLeft(190), juce::Justification::centredLeft);
 }
 
 void MainView::resized()
 {
     auto r = getLocalBounds();
     auto header = r.removeFromTop(76);
-
-    auto controls = header.removeFromRight(760).reduced(10, 8);
-    inputLabel.setBounds(controls.removeFromLeft(55));
-    inputGainSlider.setBounds(controls.removeFromLeft(190).reduced(4, 10));
-    inputMeterLabel.setBounds(controls.removeFromLeft(75));
-    controls.removeFromLeft(8);
-    outputLabel.setBounds(controls.removeFromLeft(62));
-    outputGainSlider.setBounds(controls.removeFromLeft(190).reduced(4, 10));
-    outputMeterLabel.setBounds(controls.removeFromLeft(75));
-    bypassButton.setBounds(controls.removeFromLeft(90).reduced(6, 10));
+    auto controls = header.removeFromRight(845).reduced(8, 8);
+    inputLabel.setBounds(controls.removeFromLeft(48));
+    inputGainSlider.setBounds(controls.removeFromLeft(170).reduced(3, 10));
+    inputMeterLabel.setBounds(controls.removeFromLeft(70));
+    controls.removeFromLeft(5);
+    outputLabel.setBounds(controls.removeFromLeft(58));
+    outputGainSlider.setBounds(controls.removeFromLeft(170).reduced(3, 10));
+    outputMeterLabel.setBounds(controls.removeFromLeft(70));
+    ampModeSelector.setBounds(controls.removeFromLeft(135).reduced(4, 10));
+    bypassButton.setBounds(controls.removeFromLeft(90).reduced(5, 10));
 
     navigation.setBounds(r.removeFromTop(54));
-
-    if (visiblePage != nullptr)
-        visiblePage->setBounds(r.reduced(14));
+    if (visiblePage != nullptr) visiblePage->setBounds(r.reduced(14));
 }
 
 void MainView::showPage(NavigationBar::Page page)
 {
     juce::Component* next = nullptr;
-
     switch (page)
     {
         case NavigationBar::Page::amp:      next = &ampPage; break;
@@ -126,16 +114,9 @@ void MainView::showPage(NavigationBar::Page page)
         case NavigationBar::Page::effects:  next = &effectsPage; break;
         case NavigationBar::Page::settings: next = &settingsPage; break;
     }
-
-    if (visiblePage != nullptr)
-        visiblePage->setVisible(false);
-
+    if (visiblePage != nullptr) visiblePage->setVisible(false);
     visiblePage = next;
-    if (visiblePage != nullptr)
-    {
-        visiblePage->setVisible(true);
-        visiblePage->toFront(false);
-    }
+    if (visiblePage != nullptr){visiblePage->setVisible(true);visiblePage->toFront(false);}
     resized();
 }
 

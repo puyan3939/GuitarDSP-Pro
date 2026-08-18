@@ -11,6 +11,8 @@ void HQEffectsRack::prepare(double sampleRate, int maximumBlockSize) {
         chorus[(size_t)ch].prepare(sampleRate, maximumBlockSize);
         flanger[(size_t)ch].prepare(sampleRate, maximumBlockSize);
         phaser[(size_t)ch].prepare(sampleRate);
+        tremolo[(size_t)ch].prepare(sampleRate);
+        vibrato[(size_t)ch].prepare(sampleRate, maximumBlockSize);
         delayFx[(size_t)ch].prepare(sampleRate, maximumBlockSize);
         reverbFx[(size_t)ch].prepare(sampleRate);
     }
@@ -20,7 +22,11 @@ void HQEffectsRack::prepare(double sampleRate, int maximumBlockSize) {
 void HQEffectsRack::reset() {
     for (int ch = 0; ch < stereoChannels; ++ch) {
         for (auto& pedal : pedals[(size_t)ch]) pedal.reset();
+        chorus[(size_t)ch].reset();
+        flanger[(size_t)ch].reset();
         phaser[(size_t)ch].reset();
+        tremolo[(size_t)ch].reset();
+        vibrato[(size_t)ch].reset();
     }
 }
 
@@ -108,26 +114,43 @@ void HQEffectsRack::applyDynamics(juce::AudioBuffer<float>& buffer, int startSam
 }
 
 void HQEffectsRack::updatePostParameters() {
+    const float rate = modControls.rateHz.load();
+    const float depth = juce::jlimit(0.0f, 1.0f, modControls.depth.load());
+    const float mix = juce::jlimit(0.0f, 1.0f, modControls.mix.load());
+    const float manual = juce::jlimit(0.0f, 1.0f, modControls.manual.load());
+
     ChorusHQ::Params chorusParams;
-    chorusParams.rateHz = modControls.rateHz.load();
-    chorusParams.depthMs = 1.0f + 7.0f * juce::jlimit(0.0f, 1.0f, modControls.depth.load());
-    chorusParams.centreMs = 7.0f + 9.0f * juce::jlimit(0.0f, 1.0f, modControls.manual.load());
+    chorusParams.rateHz = rate;
+    chorusParams.depthMs = 1.0f + 7.0f * depth;
+    chorusParams.centreMs = 7.0f + 9.0f * manual;
     chorusParams.feedback = juce::jlimit(-0.85f, 0.85f, modControls.feedback.load());
-    chorusParams.mix = juce::jlimit(0.0f, 1.0f, modControls.mix.load());
+    chorusParams.mix = mix;
 
     FlangerHQ::Params flangerParams;
-    flangerParams.rateHz = modControls.rateHz.load();
-    flangerParams.depthMs = 0.2f + 3.0f * juce::jlimit(0.0f, 1.0f, modControls.depth.load());
-    flangerParams.manualMs = 0.6f + 5.0f * juce::jlimit(0.0f, 1.0f, modControls.manual.load());
+    flangerParams.rateHz = rate;
+    flangerParams.depthMs = 0.2f + 3.0f * depth;
+    flangerParams.manualMs = 0.6f + 5.0f * manual;
     flangerParams.feedback = juce::jlimit(-0.92f, 0.92f, modControls.feedback.load());
-    flangerParams.mix = juce::jlimit(0.0f, 1.0f, modControls.mix.load());
+    flangerParams.mix = mix;
 
     PhaserHQ::Params phaserParams;
-    phaserParams.rateHz = modControls.rateHz.load();
-    phaserParams.depth = juce::jlimit(0.0f, 1.0f, modControls.depth.load());
+    phaserParams.rateHz = rate;
+    phaserParams.depth = depth;
     phaserParams.feedback = juce::jlimit(-0.85f, 0.85f, modControls.feedback.load());
-    phaserParams.mix = juce::jlimit(0.0f, 1.0f, modControls.mix.load());
+    phaserParams.mix = mix;
     phaserParams.stages = 6;
+
+    TremoloHQ::Params tremoloParams;
+    tremoloParams.rateHz = rate;
+    tremoloParams.depth = depth;
+    tremoloParams.mix = mix;
+    tremoloParams.shape = juce::jlimit(0.0f,1.0f,modControls.shape.load());
+
+    VibratoHQ::Params vibratoParams;
+    vibratoParams.rateHz = rate;
+    vibratoParams.centreMs = 3.0f + 7.0f * manual;
+    vibratoParams.depthMs = juce::jmin(vibratoParams.centreMs - 0.55f, 0.15f + 4.5f * depth);
+    vibratoParams.mix = mix;
 
     DelayHQ::Params d;
     d.type = static_cast<DelayType>(juce::jlimit(0, 2, delayControls.flavor.load()));
@@ -144,6 +167,8 @@ void HQEffectsRack::updatePostParameters() {
         chorus[(size_t)ch].setParameters(chorusParams);
         flanger[(size_t)ch].setParameters(flangerParams);
         phaser[(size_t)ch].setParameters(phaserParams);
+        tremolo[(size_t)ch].setParameters(tremoloParams);
+        vibrato[(size_t)ch].setParameters(vibratoParams);
         delayFx[(size_t)ch].setParameters(d);
         reverbFx[(size_t)ch].setParameters(r);
     }
@@ -177,8 +202,8 @@ void HQEffectsRack::applyModulation(juce::AudioBuffer<float>& buffer, int startS
                 case ModulationMode::chorus: data[i] = chorus[(size_t)ch].process(data[i]); break;
                 case ModulationMode::flanger: data[i] = flanger[(size_t)ch].process(data[i]); break;
                 case ModulationMode::phaser: data[i] = phaser[(size_t)ch].process(data[i]); break;
-                case ModulationMode::tremolo:
-                case ModulationMode::vibrato:
+                case ModulationMode::tremolo: data[i] = tremolo[(size_t)ch].process(data[i]); break;
+                case ModulationMode::vibrato: data[i] = vibrato[(size_t)ch].process(data[i]); break;
                 default: break;
             }
         }
