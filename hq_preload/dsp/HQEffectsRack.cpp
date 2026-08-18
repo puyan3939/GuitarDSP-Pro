@@ -22,6 +22,7 @@ void HQEffectsRack::prepare(double sampleRate, int maximumBlockSize) {
 void HQEffectsRack::reset() {
     for (int ch = 0; ch < stereoChannels; ++ch) {
         for (auto& pedal : pedals[(size_t)ch]) pedal.reset();
+        noiseGate[(size_t)ch].reset();
         chorus[(size_t)ch].reset();
         flanger[(size_t)ch].reset();
         phaser[(size_t)ch].reset();
@@ -33,9 +34,14 @@ void HQEffectsRack::reset() {
 void HQEffectsRack::updateDynamicParameters() {
     NoiseGate::Params g;
     g.thresholdDb = gateControls.thresholdDb.load();
+    g.rangeDb = gateControls.rangeDb.load();
+    g.ratio = gateControls.ratio.load();
     g.attackMs = gateControls.attackMs.load();
     g.holdMs = gateControls.holdMs.load();
     g.releaseMs = gateControls.releaseMs.load();
+    g.hysteresisDb = gateControls.hysteresisDb.load();
+    g.sidechainHpHz = gateControls.sidechainHpHz.load();
+    g.sidechainLpHz = gateControls.sidechainLpHz.load();
 
     StudioCompressor::Params c;
     c.thresholdDb = studioControls.thresholdDb.load();
