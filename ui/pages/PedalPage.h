@@ -9,7 +9,21 @@ public:
     explicit PedalPage(guitardsp::hq::HQEffectsRack& rack);
     void paint(juce::Graphics&) override;
     void resized() override;
-    void refreshFromEngine();
+    void refreshFromEngine()
+    {
+        auto& gc=effectsRack.gateControl();
+        gateThreshold.setValue(gc.thresholdDb.load(),juce::dontSendNotification);
+        gateRange.setValue(gc.rangeDb.load(),juce::dontSendNotification);
+        gateRatio.setValue(gc.ratio.load(),juce::dontSendNotification);
+        gateAttack.setValue(gc.attackMs.load(),juce::dontSendNotification);
+        gateHold.setValue(gc.holdMs.load(),juce::dontSendNotification);
+        gateRelease.setValue(gc.releaseMs.load(),juce::dontSendNotification);
+        gateHysteresis.setValue(gc.hysteresisDb.load(),juce::dontSendNotification);
+        gateSidechainHp.setValue(gc.sidechainHpHz.load(),juce::dontSendNotification);
+        gateSidechainLp.setValue(gc.sidechainLpHz.load(),juce::dontSendNotification);
+        gateEnabled.setToggleState(effectsRack.getDynamicsMode()==guitardsp::hq::HQEffectsRack::DynamicsMode::gate,juce::dontSendNotification);
+        loadSlot();
+    }
 
 private:
     void loadSlot();
