@@ -17,8 +17,6 @@ void HQEffectsRack::prepare(double sampleRate, int maximumBlockSize) {
 
 void HQEffectsRack::reset() {
     for (auto& pedal : pedals) pedal.reset();
-    // Several HQ processors currently expose no reset method. Their state is
-    // initialized in prepare(); explicit reset hooks will be added per model.
     phaser.reset();
 }
 
@@ -51,20 +49,38 @@ void HQEffectsRack::updateDynamicParameters() {
 void HQEffectsRack::processPreAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples) {
     updateDynamicParameters();
     applyDynamics(buffer, startSample, numSamples);
+
+    // PedalEngineHQ is intentionally mono. Process each channel through a
+    // temporary mono view until the pedal engine owns independent per-channel state.
+    juce::AudioBuffer<float> mono(1, numSamples);
+    const int channels = juce::jmin(2, buffer.getNumChannels());
     for (int slot = 0; slot < pedalSlots; ++slot) {
         auto& control = pedalControls[(size_t)slot];
         if (!control.enabled.load(std::memory_order_relaxed)) continue;
+
         PedalParams p;
         p.drive = control.drive.load();
         p.tone = control.tone.load();
         p.levelDb = control.levelDb.load();
-        p.mix = control.mix.load();
-        p.aux1 = control.aux1.load();
-        p.aux2 = control.aux2.load();
-        p.aux3 = control.aux3.load();
-        pedals[(size_t)slot].setModel((PedalModel)juce::jlimit(0, 8, control.model.load()));
-        pedals[(size_t)slot].setParams(p);
-        pedals[(size_t)slot].process(buffer, startSample, numSamples);
+        p.cleanMix = juce::jlimit(0.0f, 1.0f, control.mix.load());
+        p.lowCutHz = 40.0f + 260.0f * juce::jlimit(0.0f, 1.0f, control.aux1.load());
+        p.focusHz = 300.0f + 2200.0f * juce::jlimit(0.0f, 1.0f, control.aux2.load());
+        p.midDb = -12.0f + 24.0f * juce::jlimit(0.0f, 1.0f, control.aux3.load());
+        p.presenceDb = p.midDb;
+        p.bias = -0.2f + 0.4f * juce::jlimit(0.0f, 1.0f, control.aux1.load());
+        p.scoop = juce::jlimit(0.0f, 1.0f, control.aux2.load());
+        p.octave = juce::jlimit(0.0f, 1.0f, control.aux1.load());
+        p.starve = juce::jlimit(0.0f, 1.0f, control.aux2.load());
+        p.gate = juce::jlimit(0.0f, 1.0f, control.aux3.load());
+
+        auto& pedal = pedals[(size_t)slot];
+        pedal.setType(static_cast<PedalType>(juce::jlimit(0, 8, control.model.load())));
+        pedal.setParameters(p);
+        for (int ch = 0; ch < channels; ++ch) {
+            mono.copyFrom(0, 0, buffer, ch, startSample, numSamples);
+            pedal.process(mono);
+            buffer.copyFrom(ch, startSample, mono, 0, 0, numSamples);
+        }
     }
 }
 
@@ -111,8 +127,7 @@ void HQEffectsRack::updatePostParameters() {
     phaser.setParameters(phaserParams);
 
     DelayHQ::Params d;
-    const int delayType = juce::jlimit(0, 2, delayControls.flavor.load());
-    d.type = static_cast<DelayType>(delayType);
+    d.type = static_cast<DelayType>(juce::jlimit(0, 2, delayControls.flavor.load()));
     d.timeMs = delayControls.timeMs.load();
     d.feedback = delayControls.feedback.load();
     d.mix = delayControls.mix.load();
@@ -125,8 +140,7 @@ void HQEffectsRack::updatePostParameters() {
     delayFx.setParameters(d);
 
     ReverbHQ::Params r;
-    const int reverbType = juce::jlimit(0, 3, reverbControls.flavor.load());
-    r.type = static_cast<ReverbType>(reverbType);
+    r.type = static_cast<ReverbType>(juce::jlimit(0, 3, reverbControls.flavor.load()));
     r.size = reverbControls.size.load();
     r.decay = reverbControls.decay.load();
     r.damping = reverbControls.damping.load();
@@ -166,8 +180,6 @@ void HQEffectsRack::applyModulation(juce::AudioBuffer<float>& buffer, int startS
                 case ModulationMode::chorus: data[i] = chorus.process(data[i]); break;
                 case ModulationMode::flanger: data[i] = flanger.process(data[i]); break;
                 case ModulationMode::phaser: data[i] = phaser.process(data[i]); break;
-                // Tremolo and vibrato are intentionally bypassed until dedicated
-                // HQ processors are implemented and characterized.
                 case ModulationMode::tremolo:
                 case ModulationMode::vibrato:
                 default: break;
