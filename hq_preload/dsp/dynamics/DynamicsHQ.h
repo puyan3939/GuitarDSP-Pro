@@ -67,8 +67,9 @@ private: Params params; StudioCompressor comp;
 };
 
 // Guitar-oriented downward expander / precision gate.
-// The detector has its own HP/LP path so hum and hiss do not dominate opening decisions.
-// Hysteresis + hold prevent chatter, while finite range keeps note tails from being chopped to digital zero.
+// The detector can be keyed from the clean input while attenuation is applied to a
+// later signal (for example after high-gain pedals). This prevents pedal-generated
+// hiss from holding the gate open.
 class NoiseGate
 {
 public:
@@ -118,9 +119,11 @@ public:
         updateFilters();
     }
 
-    float process(float x)
+    float process(float x) { return processKeyed(x, x); }
+
+    float processKeyed(float audio, float detectorInput)
     {
-        float detector=detectorHP.process(x);
+        float detector=detectorHP.process(detectorInput);
         detector=detectorLP.process(detector);
         const float env=follower.process(detector, juce::jmax(0.2f,params.attackMs*0.6f), juce::jmax(10.0f,params.releaseMs*0.55f));
         const float envDb=20.0f*std::log10(juce::jmax(1.0e-9f,env));
@@ -146,8 +149,6 @@ public:
         float targetDb=0.0f;
         if(!gateOpen)
         {
-            // Downward-expander law. Below threshold the attenuation increases smoothly
-            // and is capped by Range rather than forcing a hard mute.
             const float below=juce::jmin(0.0f,envDb-params.thresholdDb);
             targetDb=juce::jmax(params.rangeDb, below*(params.ratio-1.0f));
         }
@@ -155,7 +156,7 @@ public:
         const float timeMs=targetDb>gainDb ? params.attackMs : params.releaseMs;
         const float a=std::exp(-1.0f/(0.001f*juce::jmax(0.1f,timeMs)*(float)sampleRate));
         gainDb=a*gainDb+(1.0f-a)*targetDb;
-        return x*dbToGain(gainDb);
+        return audio*dbToGain(gainDb);
     }
 
     float getGainReductionDb() const noexcept { return gainDb; }
