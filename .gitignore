@@ -1,0 +1,7 @@
+build/
+build-*/
+cmake-build-*/
+_deps/
+.DS_Store
+*.wav
+*.aiff

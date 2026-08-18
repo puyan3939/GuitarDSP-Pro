@@ -1,0 +1,76 @@
+name: Linux JUCE Build
+
+on:
+  push:
+    branches: [ "main", "master", "develop", "phase*" ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: JUCE ${{ matrix.juce }} / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - juce: "8.0.15"
+            compiler: gcc
+            cc: gcc
+            cxx: g++
+          - juce: "9.0.0"
+            compiler: gcc
+            cc: gcc
+            cxx: g++
+          - juce: "9.0.0"
+            compiler: clang
+            cc: clang
+            cxx: clang++
+
+    steps:
+      - name: Checkout GuitarDSP-Pro
+        uses: actions/checkout@v4
+
+      - name: Install Linux JUCE dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build git pkg-config \
+            clang \
+            libasound2-dev \
+            libjack-jackd2-dev \
+            libfreetype6-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            libwebkit2gtk-4.1-dev \
+            libglu1-mesa-dev mesa-common-dev
+
+      - name: Checkout JUCE ${{ matrix.juce }}
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: ${{ matrix.juce }}
+          path: _deps/JUCE
+          fetch-depth: 1
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGUITARDSP_JUCE_PATH="${{ github.workspace }}/_deps/JUCE"
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Show resulting binary
+        if: success()
+        run: |
+          find build -type f -perm -111 -maxdepth 6 -print || true
