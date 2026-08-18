@@ -23,8 +23,7 @@ struct OnePoleHP
     void setHz(float f)
     {
         hz = juce::jlimit(1.0f, 0.45f*(float)sampleRate, f);
-        const float a = std::exp(-2.0f * juce::MathConstants<float>::pi * hz / (float)sampleRate);
-        coeff = a;
+        coeff = std::exp(-2.0f * juce::MathConstants<float>::pi * hz / (float)sampleRate);
     }
     float process(float x) noexcept
     {
@@ -73,8 +72,8 @@ struct Biquad
 class NonlinearOversampler
 {
 public:
-    explicit NonlinearOversampler(int order=2)
-        : factor(order), os(1, order, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, false) {}
+    explicit NonlinearOversampler(int order=2, bool integerLatency=true)
+        : factor(order), os(1, (size_t)order, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, integerLatency) {}
 
     void prepare(double fs, int maxBlock)
     {
@@ -82,6 +81,8 @@ public:
     }
     void reset() { os.reset(); }
     int getFactor() const noexcept { return 1 << factor; }
+    double getInternalSampleRate() const noexcept { return sampleRate * (double)getFactor(); }
+    float getLatencySamples() const noexcept { return os.getLatencyInSamples(); }
 
     template<class Fn>
     void process(juce::AudioBuffer<float>& mono, Fn&& fn)
@@ -99,7 +100,7 @@ private:
 class Slew
 {
 public:
-    void prepare(double fs,float ms) { a=std::exp(-1.0f/(0.001f*ms*(float)fs)); }
+    void prepare(double fs,float ms) { a=std::exp(-1.0f/(0.001f*juce::jmax(0.01f,ms)*(float)fs)); }
     float process(float x) noexcept { y=a*y+(1.0f-a)*x; return y; }
     void reset(float v=0) noexcept { y=v; }
 private: float a=0.99f,y=0;
