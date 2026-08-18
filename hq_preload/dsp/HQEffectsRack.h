@@ -14,6 +14,7 @@ namespace guitardsp::hq {
 class HQEffectsRack {
 public:
     static constexpr int pedalSlots = 4;
+    static constexpr int stereoChannels = 2;
     enum class DynamicsMode { off, gate, studioCompressor, guitarCompressor };
     enum class ModulationMode { off, chorus, flanger, phaser, tremolo, vibrato };
 
@@ -58,20 +59,20 @@ private:
     void updateDynamicParameters();
     void updatePostParameters();
 
-    std::array<PedalEngineHQ, pedalSlots> pedals;
+    std::array<std::array<PedalEngineHQ, pedalSlots>, stereoChannels> pedals;
     std::array<PedalSlotControl, pedalSlots> pedalControls;
-    NoiseGate noiseGate;
-    StudioCompressor studioComp;
-    GuitarCompressor guitarComp;
+    std::array<NoiseGate, stereoChannels> noiseGate;
+    std::array<StudioCompressor, stereoChannels> studioComp;
+    std::array<GuitarCompressor, stereoChannels> guitarComp;
     GateControl gateControls;
     StudioCompControl studioControls;
     GuitarCompControl guitarControls;
-    ChorusHQ chorus;
-    FlangerHQ flanger;
-    PhaserHQ phaser;
+    std::array<ChorusHQ, stereoChannels> chorus;
+    std::array<FlangerHQ, stereoChannels> flanger;
+    std::array<PhaserHQ, stereoChannels> phaser;
     ModulationControl modControls;
-    DelayHQ delayFx;
-    ReverbHQ reverbFx;
+    std::array<DelayHQ, stereoChannels> delayFx;
+    std::array<ReverbHQ, stereoChannels> reverbFx;
     DelayControl delayControls;
     ReverbControl reverbControls;
     std::atomic<int> dynamicsMode{(int)DynamicsMode::off};
