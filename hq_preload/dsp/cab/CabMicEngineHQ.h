@@ -9,11 +9,13 @@ namespace guitardsp::hq
 {
 enum class CabType { open1x12, vintage2x12, vintage4x12, modern4x12 };
 enum class MicType { dynamic57, ribbon121, condenser67 };
+enum class CabIrEngine { classic, advanced };
 
 struct CabMicParams
 {
     CabType cab = CabType::vintage4x12;
     MicType mic = MicType::dynamic57;
+    CabIrEngine irEngine = CabIrEngine::classic;
     float position = 0.42f;      // 0=edge, 1=cap
     float distance = 0.18f;      // 0=close, 1=far
     float resonance = 0.55f;
@@ -36,6 +38,8 @@ public:
     void process(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
 
 private:
+    juce::AudioBuffer<float> makeClassicImpulse() const;
+    juce::AudioBuffer<float> makeAdvancedImpulse() const;
     juce::AudioBuffer<float> makeImpulse() const;
     void rebuildImpulse();
     void updateFilters();
@@ -47,6 +51,7 @@ private:
     std::array<OnePoleHP, 2> lowCut;
     std::array<OnePoleLP, 2> highCut;
     juce::AudioBuffer<float> work;
+    juce::AudioBuffer<float> dryWork;
     std::atomic<bool> enabled { false };
 };
 }
