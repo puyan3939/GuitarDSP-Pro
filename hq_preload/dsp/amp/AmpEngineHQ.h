@@ -25,6 +25,7 @@ class AmpEngineHQ
 {
 public:
     AmpEngineHQ();
+    ~AmpEngineHQ();
     void prepare(double sampleRate,int maxBlockSize);
     void reset();
     void setParameters(const AmpHQParams& p);
