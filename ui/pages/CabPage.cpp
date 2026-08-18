@@ -7,14 +7,14 @@ CabPage::CabPage(guitardsp::hq::CabMicEngineHQ& engine) : cab(engine)
     title.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(title);
 
-    info.setText("Generated cabinet IR + JUCE partitioned convolution. Disabled by default for safe Amp-only A/B.", juce::dontSendNotification);
     info.setColour(juce::Label::textColourId, juce::Colour::fromRGB(170, 178, 188));
     addAndMakeVisible(info);
     addAndMakeVisible(enabled);
 
+    irEngine.addItem("CLASSIC IR",1); irEngine.addItem("ADVANCED IR",2); irEngine.setSelectedId(1);
     cabType.addItem("1x12 Open",1); cabType.addItem("2x12 Vintage",2); cabType.addItem("4x12 Vintage",3); cabType.addItem("4x12 Modern",4); cabType.setSelectedId(3);
     micType.addItem("Dynamic 57",1); micType.addItem("Ribbon 121",2); micType.addItem("Condenser 67",3); micType.setSelectedId(1);
-    addAndMakeVisible(cabType); addAndMakeVisible(micType);
+    addAndMakeVisible(irEngine); addAndMakeVisible(cabType); addAndMakeVisible(micType);
 
     auto setup=[](juce::Slider& s,double lo,double hi,double v,const juce::String& suffix)
     {
@@ -25,14 +25,24 @@ CabPage::CabPage(guitardsp::hq::CabMicEngineHQ& engine) : cab(engine)
     for(auto* s:{&position,&distance,&resonance,&lowCut,&highCut,&mix}) addAndMakeVisible(*s);
 
     enabled.onClick=[this]{cab.setEnabled(enabled.getToggleState());};
+    irEngine.onChange=[this]{push();updateInfo();};
     cabType.onChange=[this]{push();}; micType.onChange=[this]{push();};
     for(auto* s:{&position,&distance,&resonance,&lowCut,&highCut,&mix}) s->onDragEnd=[this]{push();};
-    push(); cab.setEnabled(false); enabled.setToggleState(false,juce::dontSendNotification);
+    updateInfo(); push(); cab.setEnabled(false); enabled.setToggleState(false,juce::dontSendNotification);
+}
+
+void CabPage::updateInfo()
+{
+    if(irEngine.getSelectedId()==2)
+        info.setText("ADVANCED: multi-resonance + baffle/cone breakup + phase-aware early reflections. Position and Distance alter time structure.",juce::dontSendNotification);
+    else
+        info.setText("CLASSIC: original generated cabinet IR. Kept unchanged for direct A/B comparison.",juce::dontSendNotification);
 }
 
 void CabPage::push()
 {
     guitardsp::hq::CabMicParams p;
+    p.irEngine=(guitardsp::hq::CabIrEngine)juce::jlimit(0,1,irEngine.getSelectedId()-1);
     p.cab=(guitardsp::hq::CabType)juce::jlimit(0,3,cabType.getSelectedId()-1);
     p.mic=(guitardsp::hq::MicType)juce::jlimit(0,2,micType.getSelectedId()-1);
     p.position=(float)position.getValue();p.distance=(float)distance.getValue();p.resonance=(float)resonance.getValue();
@@ -46,7 +56,7 @@ void CabPage::paint(juce::Graphics& g)
 
 void CabPage::resized()
 {
-    auto r=getLocalBounds().reduced(24);title.setBounds(r.removeFromTop(44));info.setBounds(r.removeFromTop(32));
-    auto top=r.removeFromTop(44);enabled.setBounds(top.removeFromLeft(135));cabType.setBounds(top.removeFromLeft(180).reduced(4));micType.setBounds(top.removeFromLeft(180).reduced(4));
+    auto r=getLocalBounds().reduced(24);title.setBounds(r.removeFromTop(44));info.setBounds(r.removeFromTop(42));
+    auto top=r.removeFromTop(44);enabled.setBounds(top.removeFromLeft(135));irEngine.setBounds(top.removeFromLeft(150).reduced(4));cabType.setBounds(top.removeFromLeft(175).reduced(4));micType.setBounds(top.removeFromLeft(170).reduced(4));
     auto knobs=r.removeFromTop(180);const int w=knobs.getWidth()/6;position.setBounds(knobs.removeFromLeft(w));distance.setBounds(knobs.removeFromLeft(w));resonance.setBounds(knobs.removeFromLeft(w));lowCut.setBounds(knobs.removeFromLeft(w));highCut.setBounds(knobs.removeFromLeft(w));mix.setBounds(knobs);
 }
