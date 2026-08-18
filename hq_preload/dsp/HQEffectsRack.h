@@ -27,8 +27,8 @@ public:
     struct StudioCompControl { std::atomic<float> thresholdDb{-18}, ratio{4}, attackMs{10}, releaseMs{120}, kneeDb{6}, makeupDb{0}, mix{1}; std::atomic<bool> rms{true}; };
     struct GuitarCompControl { std::atomic<float> sustain{.55f}, attack{.45f}, blend{.8f}, levelDb{0}; };
     struct ModulationControl { std::atomic<float> rateHz{.7f}, depth{.5f}, mix{.5f}, feedback{0}, manual{.5f}, shape{.5f}; };
-    struct DelayControl { std::atomic<int> flavor{(int)DelayFlavor::digital}; std::atomic<float> timeMs{380}, feedback{.35f}, mix{.28f}, lowCutHz{80}, highCutHz{6500}, drive{.1f}, wow{.15f}, flutter{.08f}, age{.2f}; };
-    struct ReverbControl { std::atomic<int> flavor{(int)ReverbFlavor::room}; std::atomic<float> size{.55f}, decay{.55f}, damping{.5f}, preDelayMs{18}, mix{.22f}, mod{.15f}, drip{.35f}; };
+    struct DelayControl { std::atomic<int> flavor{(int)DelayType::digital}; std::atomic<float> timeMs{380}, feedback{.35f}, mix{.28f}, lowCutHz{80}, highCutHz{6500}, drive{.1f}, wow{.15f}, flutter{.08f}, age{.2f}; };
+    struct ReverbControl { std::atomic<int> flavor{(int)ReverbType::room}; std::atomic<float> size{.55f}, decay{.55f}, damping{.5f}, preDelayMs{18}, mix{.22f}, mod{.15f}, drip{.35f}; };
 
     void prepare(double sampleRate, int maximumBlockSize);
     void reset();
@@ -60,17 +60,15 @@ private:
 
     std::array<PedalEngineHQ, pedalSlots> pedals;
     std::array<PedalSlotControl, pedalSlots> pedalControls;
-    NoiseGateHQ noiseGate;
-    StudioCompressorHQ studioComp;
-    GuitarCompressorHQ guitarComp;
+    NoiseGate noiseGate;
+    StudioCompressor studioComp;
+    GuitarCompressor guitarComp;
     GateControl gateControls;
     StudioCompControl studioControls;
     GuitarCompControl guitarControls;
     ChorusHQ chorus;
     FlangerHQ flanger;
     PhaserHQ phaser;
-    TremoloHQ tremolo;
-    VibratoHQ vibrato;
     ModulationControl modControls;
     DelayHQ delayFx;
     ReverbHQ reverbFx;
