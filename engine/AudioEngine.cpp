@@ -2,11 +2,48 @@
 #include <cmath>
 
 AudioEngine::AudioEngine() = default;
-AudioEngine::~AudioEngine() = default;
+
+AudioEngine::~AudioEngine()
+{
+    shutdown();
+}
+
+void AudioEngine::initialise()
+{
+    if (deviceCallbackAttached.load(std::memory_order_relaxed))
+        return;
+
+    const auto error = deviceManager.initialise(1, 2, nullptr, true);
+    if (error.isNotEmpty())
+        DBG("Audio device initialise error: " + error);
+
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+    {
+        juce::AudioDeviceManager::AudioDeviceSetup setup;
+        deviceManager.getAudioDeviceSetup(setup);
+        setup.sampleRate = 48000.0;
+        setup.bufferSize = 256;
+        const auto setupError = deviceManager.setAudioDeviceSetup(setup, true);
+        if (setupError.isNotEmpty())
+            DBG("Requested 48 kHz / 256 samples unavailable: " + setupError);
+    }
+
+    deviceManager.addAudioCallback(this);
+    deviceCallbackAttached.store(true, std::memory_order_relaxed);
+}
+
+void AudioEngine::shutdown()
+{
+    if (deviceCallbackAttached.exchange(false, std::memory_order_relaxed))
+        deviceManager.removeAudioCallback(this);
+    deviceManager.closeAudioDevice();
+    release();
+}
 
 void AudioEngine::prepare(double sampleRate, int maximumBlockSize)
 {
     signalChain.prepare(sampleRate, maximumBlockSize);
+    ioBuffer.setSize(2, maximumBlockSize, false, false, true);
     for (auto& meter : inputMeters) meter.reset();
     for (auto& meter : outputMeters) meter.reset();
     for (auto& value : inputRmsDb) value.store(-100.0f, std::memory_order_relaxed);
@@ -16,6 +53,7 @@ void AudioEngine::prepare(double sampleRate, int maximumBlockSize)
 void AudioEngine::release()
 {
     signalChain.reset();
+    ioBuffer.setSize(2, 0);
     for (auto& meter : inputMeters) meter.reset();
     for (auto& meter : outputMeters) meter.reset();
     for (auto& value : inputRmsDb) value.store(-100.0f, std::memory_order_relaxed);
@@ -32,25 +70,49 @@ void AudioEngine::process(juce::AudioBuffer<float>& buffer, int startSample, int
     measureBlock(buffer, startSample, numSamples, outputMeters, outputRmsDb);
 }
 
-void AudioEngine::setInputGainDb(float gainDb) noexcept
+void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
-    signalChain.setInputGainDb(gainDb);
+    if (device != nullptr)
+        prepare(device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());
 }
 
-void AudioEngine::setOutputGainDb(float gainDb) noexcept
+void AudioEngine::audioDeviceStopped()
 {
-    signalChain.setOutputGainDb(gainDb);
+    release();
 }
 
-void AudioEngine::setBypass(bool enabled) noexcept
+void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
+                                                   int numInputChannels,
+                                                   float* const* outputChannelData,
+                                                   int numOutputChannels,
+                                                   int numSamples,
+                                                   const juce::AudioIODeviceCallbackContext&)
 {
-    signalChain.setBypass(enabled);
+    ioBuffer.setSize(2, numSamples, false, false, true);
+    ioBuffer.clear();
+
+    const int inputsToCopy = juce::jmin(2, numInputChannels);
+    for (int ch = 0; ch < inputsToCopy; ++ch)
+        if (inputChannelData[ch] != nullptr)
+            juce::FloatVectorOperations::copy(ioBuffer.getWritePointer(ch), inputChannelData[ch], numSamples);
+
+    process(ioBuffer, 0, numSamples);
+
+    for (int ch = 0; ch < numOutputChannels; ++ch)
+    {
+        if (outputChannelData[ch] == nullptr)
+            continue;
+        if (ch < ioBuffer.getNumChannels())
+            juce::FloatVectorOperations::copy(outputChannelData[ch], ioBuffer.getReadPointer(ch), numSamples);
+        else
+            juce::FloatVectorOperations::clear(outputChannelData[ch], numSamples);
+    }
 }
 
-void AudioEngine::setMonoInputToStereo(bool enabled) noexcept
-{
-    signalChain.setMonoInputToStereo(enabled);
-}
+void AudioEngine::setInputGainDb(float gainDb) noexcept { signalChain.setInputGainDb(gainDb); }
+void AudioEngine::setOutputGainDb(float gainDb) noexcept { signalChain.setOutputGainDb(gainDb); }
+void AudioEngine::setBypass(bool enabled) noexcept { signalChain.setBypass(enabled); }
+void AudioEngine::setMonoInputToStereo(bool enabled) noexcept { signalChain.setMonoInputToStereo(enabled); }
 
 float AudioEngine::getInputPeak(int channel) const noexcept
 {
