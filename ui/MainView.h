@@ -23,6 +23,16 @@ private:
     void showPage(NavigationBar::Page page);
     void timerCallback() override;
 
+    juce::File getPresetDirectory() const;
+    juce::File getPresetFile(const juce::String& name) const;
+    void refreshPresetList(const juce::String& preferred = {});
+    void saveCurrentPreset();
+    void loadSelectedPreset();
+    void deleteSelectedPreset();
+    juce::var capturePreset() const;
+    bool applyPreset(const juce::var& preset);
+    void refreshPagesFromEngine();
+
     AudioEngine& audioEngine;
     NavigationBar navigation;
 
@@ -40,6 +50,12 @@ private:
     juce::Label outputLabel;
     juce::Label inputMeterLabel;
     juce::Label outputMeterLabel;
+
+    juce::Label presetLabel;
+    juce::ComboBox presetSelector;
+    juce::TextButton presetSaveButton { "SAVE" };
+    juce::TextButton presetDeleteButton { "DELETE" };
+    bool refreshingPresets = false;
 
     juce::Component* visiblePage = nullptr;
 };
