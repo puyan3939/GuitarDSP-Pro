@@ -5,18 +5,21 @@ namespace
 juce::var makeObject() { return juce::var(new juce::DynamicObject()); }
 float getFloat(juce::DynamicObject* o, const char* key, float fallback)
 {
-    if (o == nullptr || !o->hasProperty(key)) return fallback;
-    return (float)(double)o->getProperty(key);
+    const juce::Identifier id(key);
+    if (o == nullptr || !o->hasProperty(id)) return fallback;
+    return (float)(double)o->getProperty(id);
 }
 int getInt(juce::DynamicObject* o, const char* key, int fallback)
 {
-    if (o == nullptr || !o->hasProperty(key)) return fallback;
-    return (int)o->getProperty(key);
+    const juce::Identifier id(key);
+    if (o == nullptr || !o->hasProperty(id)) return fallback;
+    return (int)o->getProperty(id);
 }
 bool getBool(juce::DynamicObject* o, const char* key, bool fallback)
 {
-    if (o == nullptr || !o->hasProperty(key)) return fallback;
-    return (bool)o->getProperty(key);
+    const juce::Identifier id(key);
+    if (o == nullptr || !o->hasProperty(id)) return fallback;
+    return (bool)o->getProperty(id);
 }
 }
 
@@ -28,185 +31,62 @@ MainView::MainView(AudioEngine& engine)
       effectsPage(engine.getHQEffectsRack()),
       settingsPage(engine.getDeviceManager())
 {
-    addAndMakeVisible(navigation);
-    addAndMakeVisible(ampPage);
-    addChildComponent(pedalPage);
-    addChildComponent(cabPage);
-    addChildComponent(effectsPage);
-    addChildComponent(settingsPage);
-
+    addAndMakeVisible(navigation); addAndMakeVisible(ampPage); addChildComponent(pedalPage); addChildComponent(cabPage); addChildComponent(effectsPage); addChildComponent(settingsPage);
     navigation.onPageSelected = [this](NavigationBar::Page page){ showPage(page); };
 
-    auto configureGainSlider = [](juce::Slider& slider, double min, double max, double initial)
-    {
-        slider.setSliderStyle(juce::Slider::LinearHorizontal);
-        slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 64, 24);
-        slider.setRange(min, max, 0.1);
-        slider.setValue(initial, juce::dontSendNotification);
-        slider.setNumDecimalPlacesToDisplay(1);
-        slider.setTextValueSuffix(" dB");
-    };
+    auto configureGainSlider=[](juce::Slider& slider,double min,double max,double initial){slider.setSliderStyle(juce::Slider::LinearHorizontal);slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,64,24);slider.setRange(min,max,0.1);slider.setValue(initial,juce::dontSendNotification);slider.setNumDecimalPlacesToDisplay(1);slider.setTextValueSuffix(" dB");};
+    configureGainSlider(inputGainSlider,-36.0,18.0,-6.0); configureGainSlider(outputGainSlider,-60.0,6.0,-18.0);
+    ampModeSelector.addItem("LEGACY 20",1);ampModeSelector.addItem("HQ 20",2);ampModeSelector.setSelectedId(1,juce::dontSendNotification);ampModeSelector.setTooltip("A/B the editable 20-stage amp and the higher-detail HQ model");
+    inputLabel.setText("INPUT",juce::dontSendNotification);outputLabel.setText("OUTPUT",juce::dontSendNotification);inputMeterLabel.setText("-100 dB",juce::dontSendNotification);outputMeterLabel.setText("-100 dB",juce::dontSendNotification);
+    inputLabel.setColour(juce::Label::textColourId,juce::Colour::fromRGB(165,174,184));outputLabel.setColour(juce::Label::textColourId,juce::Colour::fromRGB(165,174,184));inputMeterLabel.setColour(juce::Label::textColourId,juce::Colour::fromRGB(98,213,167));outputMeterLabel.setColour(juce::Label::textColourId,juce::Colour::fromRGB(98,213,167));
+    addAndMakeVisible(inputGainSlider);addAndMakeVisible(outputGainSlider);addAndMakeVisible(ampModeSelector);addAndMakeVisible(bypassButton);addAndMakeVisible(inputLabel);addAndMakeVisible(outputLabel);addAndMakeVisible(inputMeterLabel);addAndMakeVisible(outputMeterLabel);
 
-    configureGainSlider(inputGainSlider, -36.0, 18.0, -6.0);
-    configureGainSlider(outputGainSlider, -60.0, 6.0, -18.0);
+    presetLabel.setText("PRESET",juce::dontSendNotification);presetLabel.setColour(juce::Label::textColourId,juce::Colour::fromRGB(222,110,58));presetLabel.setFont(juce::Font(12.0f,juce::Font::bold));presetSelector.setEditableText(true);presetSelector.setTextWhenNothingSelected("Type preset name");
+    addAndMakeVisible(presetLabel);addAndMakeVisible(presetSelector);addAndMakeVisible(presetSaveButton);addAndMakeVisible(presetDeleteButton);
 
-    ampModeSelector.addItem("LEGACY 20", 1);
-    ampModeSelector.addItem("HQ 20", 2);
-    ampModeSelector.setSelectedId(1, juce::dontSendNotification);
-    ampModeSelector.setTooltip("A/B the editable 20-stage amp and the higher-detail HQ model");
-
-    inputLabel.setText("INPUT", juce::dontSendNotification);
-    outputLabel.setText("OUTPUT", juce::dontSendNotification);
-    inputMeterLabel.setText("-100 dB", juce::dontSendNotification);
-    outputMeterLabel.setText("-100 dB", juce::dontSendNotification);
-    inputLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(165,174,184));
-    outputLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(165,174,184));
-    inputMeterLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(98,213,167));
-    outputMeterLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(98,213,167));
-
-    addAndMakeVisible(inputGainSlider); addAndMakeVisible(outputGainSlider); addAndMakeVisible(ampModeSelector); addAndMakeVisible(bypassButton);
-    addAndMakeVisible(inputLabel); addAndMakeVisible(outputLabel); addAndMakeVisible(inputMeterLabel); addAndMakeVisible(outputMeterLabel);
-
-    presetLabel.setText("PRESET",juce::dontSendNotification);
-    presetLabel.setColour(juce::Label::textColourId,juce::Colour::fromRGB(222,110,58));
-    presetLabel.setFont(juce::Font(12.0f,juce::Font::bold));
-    presetSelector.setEditableText(true);
-    presetSelector.setTextWhenNothingSelected("Type preset name");
-    addAndMakeVisible(presetLabel); addAndMakeVisible(presetSelector); addAndMakeVisible(presetSaveButton); addAndMakeVisible(presetDeleteButton);
-
-    inputGainSlider.onValueChange=[this]{audioEngine.setInputGainDb((float)inputGainSlider.getValue());};
-    outputGainSlider.onValueChange=[this]{audioEngine.setOutputGainDb((float)outputGainSlider.getValue());};
-    ampModeSelector.onChange=[this]{audioEngine.setAmpMode(ampModeSelector.getSelectedId()==2?SignalChain::AmpMode::hq:SignalChain::AmpMode::legacy);};
-    bypassButton.onClick=[this]{audioEngine.setBypass(bypassButton.getToggleState());};
-    presetSelector.onChange=[this]{if(!refreshingPresets)loadSelectedPreset();};
-    presetSaveButton.onClick=[this]{saveCurrentPreset();};
-    presetDeleteButton.onClick=[this]{deleteSelectedPreset();};
-
-    audioEngine.setInputGainDb((float)inputGainSlider.getValue()); audioEngine.setOutputGainDb((float)outputGainSlider.getValue()); audioEngine.setAmpMode(SignalChain::AmpMode::legacy);
-    refreshPresetList();
-    showPage(NavigationBar::Page::amp); startTimerHz(15);
+    inputGainSlider.onValueChange=[this]{audioEngine.setInputGainDb((float)inputGainSlider.getValue());};outputGainSlider.onValueChange=[this]{audioEngine.setOutputGainDb((float)outputGainSlider.getValue());};ampModeSelector.onChange=[this]{audioEngine.setAmpMode(ampModeSelector.getSelectedId()==2?SignalChain::AmpMode::hq:SignalChain::AmpMode::legacy);};bypassButton.onClick=[this]{audioEngine.setBypass(bypassButton.getToggleState());};
+    presetSelector.onChange=[this]{if(!refreshingPresets)loadSelectedPreset();};presetSaveButton.onClick=[this]{saveCurrentPreset();};presetDeleteButton.onClick=[this]{deleteSelectedPreset();};
+    audioEngine.setInputGainDb((float)inputGainSlider.getValue());audioEngine.setOutputGainDb((float)outputGainSlider.getValue());audioEngine.setAmpMode(SignalChain::AmpMode::legacy);refreshPresetList();showPage(NavigationBar::Page::amp);startTimerHz(15);
 }
 
 MainView::~MainView(){stopTimer();}
-
-juce::File MainView::getPresetDirectory() const
-{
-    auto dir=juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                 .getChildFile("GuitarDSP-Pro").getChildFile("Presets");
-    dir.createDirectory();
-    return dir;
-}
-
-juce::File MainView::getPresetFile(const juce::String& name) const
-{
-    auto safe=name.trim().removeCharacters("\\/:*?\"<>|");
-    if(safe.isEmpty()) safe="Preset";
-    return getPresetDirectory().getChildFile(safe+".json");
-}
-
-void MainView::refreshPresetList(const juce::String& preferred)
-{
-    refreshingPresets=true;
-    const auto keep=preferred.isNotEmpty()?preferred:presetSelector.getText();
-    presetSelector.clear(juce::dontSendNotification);
-    auto files=getPresetDirectory().findChildFiles(juce::File::findFiles,false,"*.json");
-    files.sort();
-    int id=1;
-    for(const auto& f:files) presetSelector.addItem(f.getFileNameWithoutExtension(),id++);
-    if(keep.isNotEmpty()) presetSelector.setText(keep,juce::dontSendNotification);
-    refreshingPresets=false;
-}
+juce::File MainView::getPresetDirectory() const{auto dir=juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("GuitarDSP-Pro").getChildFile("Presets");dir.createDirectory();return dir;}
+juce::File MainView::getPresetFile(const juce::String& name) const{auto safe=name.trim().removeCharacters("\\/:*?\"<>|");if(safe.isEmpty())safe="Preset";return getPresetDirectory().getChildFile(safe+".json");}
+void MainView::refreshPresetList(const juce::String& preferred){refreshingPresets=true;const auto keep=preferred.isNotEmpty()?preferred:presetSelector.getText();presetSelector.clear(juce::dontSendNotification);const auto files=getPresetDirectory().findChildFiles(juce::File::findFiles,false,"*.json");int id=1;for(const auto& f:files)presetSelector.addItem(f.getFileNameWithoutExtension(),id++);if(keep.isNotEmpty())presetSelector.setText(keep,juce::dontSendNotification);refreshingPresets=false;}
 
 juce::var MainView::capturePreset() const
 {
-    auto root=makeObject(); auto* r=root.getDynamicObject();
-    r->setProperty("version",1); r->setProperty("name",presetSelector.getText());
-    r->setProperty("inputGainDb",inputGainSlider.getValue()); r->setProperty("outputGainDb",outputGainSlider.getValue());
-    r->setProperty("ampMode",(int)audioEngine.getAmpMode()); r->setProperty("bypass",bypassButton.getToggleState());
-
-    juce::Array<juce::var> legacy;
-    for(const auto& p:audioEngine.getAmpEngine().getParameters()) {
-        auto v=makeObject(); auto* o=v.getDynamicObject();
-        o->setProperty("preHp",p.preHpHz); o->setProperty("preLp",p.preLpHz); o->setProperty("drive",p.drive); o->setProperty("bias",p.bias);
-        o->setProperty("postLp",p.postLpHz); o->setProperty("output",p.output); o->setProperty("nonlinear",p.nonlinear); o->setProperty("clipShape",p.clipShape); legacy.add(v);
-    }
-    r->setProperty("legacyStages",juce::var(legacy));
-
-    const auto& hp=audioEngine.getHQAmpEngine().getParameters();
-    auto hq=makeObject(); auto* ho=hq.getDynamicObject();
-    juce::Array<juce::var> hStages;
-    for(const auto& p:hp.stage){auto v=makeObject();auto* o=v.getDynamicObject();o->setProperty("preHp",p.preHpHz);o->setProperty("preLp",p.preLpHz);o->setProperty("drive",p.drive);o->setProperty("bias",p.bias);o->setProperty("asym",p.asymmetry);o->setProperty("memory",p.memory);o->setProperty("postLp",p.postLpHz);o->setProperty("output",p.output);hStages.add(v);}
-    ho->setProperty("stages",juce::var(hStages)); ho->setProperty("bass",hp.bassDb); ho->setProperty("mid",hp.midDb); ho->setProperty("treble",hp.trebleDb);
-    ho->setProperty("sag",hp.sag); ho->setProperty("sagRecovery",hp.sagRecoveryMs); ho->setProperty("damping",hp.damping); ho->setProperty("presence",hp.presence);
-    ho->setProperty("biasExcursion",hp.biasExcursion); ho->setProperty("transformerSat",hp.transformerSaturation); ho->setProperty("outputDb",hp.outputDb); r->setProperty("hqAmp",hq);
-
-    auto& rack=audioEngine.getHQEffectsRack();
-    juce::Array<juce::var> pedals;
-    for(int i=0;i<guitardsp::hq::HQEffectsRack::pedalSlots;++i){auto& p=rack.pedalSlot(i);auto v=makeObject();auto* o=v.getDynamicObject();o->setProperty("enabled",p.enabled.load());o->setProperty("model",p.model.load());o->setProperty("drive",p.drive.load());o->setProperty("tone",p.tone.load());o->setProperty("level",p.levelDb.load());o->setProperty("mix",p.mix.load());o->setProperty("aux1",p.aux1.load());o->setProperty("aux2",p.aux2.load());o->setProperty("aux3",p.aux3.load());pedals.add(v);} r->setProperty("pedals",juce::var(pedals));
-
+    auto root=makeObject();auto* r=root.getDynamicObject();r->setProperty("version",1);r->setProperty("name",presetSelector.getText());r->setProperty("inputGainDb",inputGainSlider.getValue());r->setProperty("outputGainDb",outputGainSlider.getValue());r->setProperty("ampMode",(int)audioEngine.getAmpMode());r->setProperty("bypass",bypassButton.getToggleState());
+    juce::Array<juce::var> legacy;for(const auto& p:audioEngine.getAmpEngine().getParameters()){auto v=makeObject();auto* o=v.getDynamicObject();o->setProperty("preHp",p.preHpHz);o->setProperty("preLp",p.preLpHz);o->setProperty("drive",p.drive);o->setProperty("bias",p.bias);o->setProperty("postLp",p.postLpHz);o->setProperty("output",p.output);o->setProperty("nonlinear",p.nonlinear);o->setProperty("clipShape",p.clipShape);legacy.add(v);}r->setProperty("legacyStages",juce::var(legacy));
+    const auto& hp=audioEngine.getHQAmpEngine().getParameters();auto hq=makeObject();auto* ho=hq.getDynamicObject();juce::Array<juce::var> hs;for(const auto& p:hp.stage){auto v=makeObject();auto* o=v.getDynamicObject();o->setProperty("preHp",p.preHpHz);o->setProperty("preLp",p.preLpHz);o->setProperty("drive",p.drive);o->setProperty("bias",p.bias);o->setProperty("asym",p.asymmetry);o->setProperty("memory",p.memory);o->setProperty("postLp",p.postLpHz);o->setProperty("output",p.output);hs.add(v);}ho->setProperty("stages",juce::var(hs));ho->setProperty("bass",hp.bassDb);ho->setProperty("mid",hp.midDb);ho->setProperty("treble",hp.trebleDb);ho->setProperty("sag",hp.sag);ho->setProperty("sagRecovery",hp.sagRecoveryMs);ho->setProperty("damping",hp.damping);ho->setProperty("presence",hp.presence);ho->setProperty("biasExcursion",hp.biasExcursion);ho->setProperty("transformerSat",hp.transformerSaturation);ho->setProperty("outputDb",hp.outputDb);r->setProperty("hqAmp",hq);
+    auto& rack=audioEngine.getHQEffectsRack();juce::Array<juce::var> pedals;for(int i=0;i<guitardsp::hq::HQEffectsRack::pedalSlots;++i){auto& p=rack.pedalSlot(i);auto v=makeObject();auto* o=v.getDynamicObject();o->setProperty("enabled",p.enabled.load());o->setProperty("model",p.model.load());o->setProperty("drive",p.drive.load());o->setProperty("tone",p.tone.load());o->setProperty("level",p.levelDb.load());o->setProperty("mix",p.mix.load());o->setProperty("aux1",p.aux1.load());o->setProperty("aux2",p.aux2.load());o->setProperty("aux3",p.aux3.load());pedals.add(v);}r->setProperty("pedals",juce::var(pedals));
     auto gate=makeObject();auto* go=gate.getDynamicObject();auto& g=rack.gateControl();go->setProperty("mode",(int)rack.getDynamicsMode());go->setProperty("threshold",g.thresholdDb.load());go->setProperty("range",g.rangeDb.load());go->setProperty("ratio",g.ratio.load());go->setProperty("attack",g.attackMs.load());go->setProperty("hold",g.holdMs.load());go->setProperty("release",g.releaseMs.load());go->setProperty("hysteresis",g.hysteresisDb.load());go->setProperty("hp",g.sidechainHpHz.load());go->setProperty("lp",g.sidechainLpHz.load());r->setProperty("gate",gate);
-
     auto mod=makeObject();auto* mo=mod.getDynamicObject();auto& m=rack.modulationControl();mo->setProperty("mode",(int)rack.getModulationMode());mo->setProperty("rate",m.rateHz.load());mo->setProperty("depth",m.depth.load());mo->setProperty("mix",m.mix.load());mo->setProperty("feedback",m.feedback.load());mo->setProperty("manual",m.manual.load());mo->setProperty("shape",m.shape.load());r->setProperty("mod",mod);
     auto delay=makeObject();auto* de=delay.getDynamicObject();auto& d=rack.delayControl();de->setProperty("enabled",rack.isDelayEnabled());de->setProperty("type",d.flavor.load());de->setProperty("time",d.timeMs.load());de->setProperty("feedback",d.feedback.load());de->setProperty("mix",d.mix.load());de->setProperty("lowCut",d.lowCutHz.load());de->setProperty("highCut",d.highCutHz.load());de->setProperty("drive",d.drive.load());de->setProperty("wow",d.wow.load());de->setProperty("flutter",d.flutter.load());de->setProperty("age",d.age.load());r->setProperty("delay",delay);
     auto rev=makeObject();auto* ro=rev.getDynamicObject();auto& rv=rack.reverbControl();ro->setProperty("enabled",rack.isReverbEnabled());ro->setProperty("type",rv.flavor.load());ro->setProperty("size",rv.size.load());ro->setProperty("decay",rv.decay.load());ro->setProperty("damping",rv.damping.load());ro->setProperty("preDelay",rv.preDelayMs.load());ro->setProperty("mix",rv.mix.load());ro->setProperty("mod",rv.mod.load());ro->setProperty("drip",rv.drip.load());r->setProperty("reverb",rev);
-
-    const auto& cp=audioEngine.getCabMicEngine().getParameters();auto cab=makeObject();auto* co=cab.getDynamicObject();co->setProperty("enabled",audioEngine.getCabMicEngine().isEnabled());co->setProperty("cab",(int)cp.cab);co->setProperty("mic",(int)cp.mic);co->setProperty("position",cp.position);co->setProperty("distance",cp.distance);co->setProperty("resonance",cp.resonance);co->setProperty("lowCut",cp.lowCutHz);co->setProperty("highCut",cp.highCutHz);co->setProperty("mix",cp.mix);r->setProperty("cab",cab);
-    return root;
+    const auto& cp=audioEngine.getCabMicEngine().getParameters();auto cab=makeObject();auto* co=cab.getDynamicObject();co->setProperty("enabled",audioEngine.getCabMicEngine().isEnabled());co->setProperty("cab",(int)cp.cab);co->setProperty("mic",(int)cp.mic);co->setProperty("position",cp.position);co->setProperty("distance",cp.distance);co->setProperty("resonance",cp.resonance);co->setProperty("lowCut",cp.lowCutHz);co->setProperty("highCut",cp.highCutHz);co->setProperty("mix",cp.mix);r->setProperty("cab",cab);return root;
 }
 
 bool MainView::applyPreset(const juce::var& preset)
 {
-    auto* r=preset.getDynamicObject(); if(r==nullptr)return false;
-    const float in=getFloat(r,"inputGainDb",(float)inputGainSlider.getValue()); const float out=getFloat(r,"outputGainDb",(float)outputGainSlider.getValue());
-    inputGainSlider.setValue(in,juce::dontSendNotification);outputGainSlider.setValue(out,juce::dontSendNotification);audioEngine.setInputGainDb(in);audioEngine.setOutputGainDb(out);
-    const int ampMode=juce::jlimit(0,1,getInt(r,"ampMode",0));audioEngine.setAmpMode((SignalChain::AmpMode)ampMode);ampModeSelector.setSelectedId(ampMode+1,juce::dontSendNotification);
-    const bool bp=getBool(r,"bypass",false);bypassButton.setToggleState(bp,juce::dontSendNotification);audioEngine.setBypass(bp);
-
-    auto legacyVar=r->getProperty("legacyStages");if(auto* a=legacyVar.getArray()){auto p=audioEngine.getAmpEngine().getParameters();for(int i=0;i<juce::jmin((int)a->size(),AmpEngine::numStages);++i){auto* o=(*a)[i].getDynamicObject();auto& s=p[(size_t)i];s.preHpHz=getFloat(o,"preHp",s.preHpHz);s.preLpHz=getFloat(o,"preLp",s.preLpHz);s.drive=getFloat(o,"drive",s.drive);s.bias=getFloat(o,"bias",s.bias);s.postLpHz=getFloat(o,"postLp",s.postLpHz);s.output=getFloat(o,"output",s.output);s.nonlinear=getFloat(o,"nonlinear",s.nonlinear);s.clipShape=getFloat(o,"clipShape",s.clipShape);}audioEngine.getAmpEngine().setParameters(p);}
-
-    auto hqVar=r->getProperty("hqAmp");if(auto* o=hqVar.getDynamicObject()){auto p=audioEngine.getHQAmpEngine().getParameters();auto sv=o->getProperty("stages");if(auto* a=sv.getArray())for(int i=0;i<juce::jmin((int)a->size(),20);++i){auto* so=(*a)[i].getDynamicObject();auto& s=p.stage[(size_t)i];s.preHpHz=getFloat(so,"preHp",s.preHpHz);s.preLpHz=getFloat(so,"preLp",s.preLpHz);s.drive=getFloat(so,"drive",s.drive);s.bias=getFloat(so,"bias",s.bias);s.asymmetry=getFloat(so,"asym",s.asymmetry);s.memory=getFloat(so,"memory",s.memory);s.postLpHz=getFloat(so,"postLp",s.postLpHz);s.output=getFloat(so,"output",s.output);}p.bassDb=getFloat(o,"bass",p.bassDb);p.midDb=getFloat(o,"mid",p.midDb);p.trebleDb=getFloat(o,"treble",p.trebleDb);p.sag=getFloat(o,"sag",p.sag);p.sagRecoveryMs=getFloat(o,"sagRecovery",p.sagRecoveryMs);p.damping=getFloat(o,"damping",p.damping);p.presence=getFloat(o,"presence",p.presence);p.biasExcursion=getFloat(o,"biasExcursion",p.biasExcursion);p.transformerSaturation=getFloat(o,"transformerSat",p.transformerSaturation);p.outputDb=getFloat(o,"outputDb",p.outputDb);audioEngine.getHQAmpEngine().setParameters(p);}
-
-    auto& rack=audioEngine.getHQEffectsRack();auto pedalsVar=r->getProperty("pedals");if(auto* a=pedalsVar.getArray())for(int i=0;i<juce::jmin((int)a->size(),guitardsp::hq::HQEffectsRack::pedalSlots);++i){auto* o=(*a)[i].getDynamicObject();auto& p=rack.pedalSlot(i);p.enabled.store(getBool(o,"enabled",p.enabled.load()));p.model.store(juce::jlimit(0,8,getInt(o,"model",p.model.load())));p.drive.store(getFloat(o,"drive",p.drive.load()));p.tone.store(getFloat(o,"tone",p.tone.load()));p.levelDb.store(getFloat(o,"level",p.levelDb.load()));p.mix.store(getFloat(o,"mix",p.mix.load()));p.aux1.store(getFloat(o,"aux1",p.aux1.load()));p.aux2.store(getFloat(o,"aux2",p.aux2.load()));p.aux3.store(getFloat(o,"aux3",p.aux3.load()));}
-
-    auto gateVar=r->getProperty("gate");if(auto* o=gateVar.getDynamicObject()){auto& g=rack.gateControl();rack.setDynamicsMode((guitardsp::hq::HQEffectsRack::DynamicsMode)juce::jlimit(0,3,getInt(o,"mode",(int)rack.getDynamicsMode())));g.thresholdDb.store(getFloat(o,"threshold",g.thresholdDb.load()));g.rangeDb.store(getFloat(o,"range",g.rangeDb.load()));g.ratio.store(getFloat(o,"ratio",g.ratio.load()));g.attackMs.store(getFloat(o,"attack",g.attackMs.load()));g.holdMs.store(getFloat(o,"hold",g.holdMs.load()));g.releaseMs.store(getFloat(o,"release",g.releaseMs.load()));g.hysteresisDb.store(getFloat(o,"hysteresis",g.hysteresisDb.load()));g.sidechainHpHz.store(getFloat(o,"hp",g.sidechainHpHz.load()));g.sidechainLpHz.store(getFloat(o,"lp",g.sidechainLpHz.load()));}
-    auto modVar=r->getProperty("mod");if(auto* o=modVar.getDynamicObject()){auto& m=rack.modulationControl();rack.setModulationMode((guitardsp::hq::HQEffectsRack::ModulationMode)juce::jlimit(0,5,getInt(o,"mode",(int)rack.getModulationMode())));m.rateHz.store(getFloat(o,"rate",m.rateHz.load()));m.depth.store(getFloat(o,"depth",m.depth.load()));m.mix.store(getFloat(o,"mix",m.mix.load()));m.feedback.store(getFloat(o,"feedback",m.feedback.load()));m.manual.store(getFloat(o,"manual",m.manual.load()));m.shape.store(getFloat(o,"shape",m.shape.load()));}
-    auto delayVar=r->getProperty("delay");if(auto* o=delayVar.getDynamicObject()){auto& d=rack.delayControl();rack.setDelayEnabled(getBool(o,"enabled",rack.isDelayEnabled()));d.flavor.store(juce::jlimit(0,2,getInt(o,"type",d.flavor.load())));d.timeMs.store(getFloat(o,"time",d.timeMs.load()));d.feedback.store(getFloat(o,"feedback",d.feedback.load()));d.mix.store(getFloat(o,"mix",d.mix.load()));d.lowCutHz.store(getFloat(o,"lowCut",d.lowCutHz.load()));d.highCutHz.store(getFloat(o,"highCut",d.highCutHz.load()));d.drive.store(getFloat(o,"drive",d.drive.load()));d.wow.store(getFloat(o,"wow",d.wow.load()));d.flutter.store(getFloat(o,"flutter",d.flutter.load()));d.age.store(getFloat(o,"age",d.age.load()));}
-    auto revVar=r->getProperty("reverb");if(auto* o=revVar.getDynamicObject()){auto& v=rack.reverbControl();rack.setReverbEnabled(getBool(o,"enabled",rack.isReverbEnabled()));v.flavor.store(juce::jlimit(0,3,getInt(o,"type",v.flavor.load())));v.size.store(getFloat(o,"size",v.size.load()));v.decay.store(getFloat(o,"decay",v.decay.load()));v.damping.store(getFloat(o,"damping",v.damping.load()));v.preDelayMs.store(getFloat(o,"preDelay",v.preDelayMs.load()));v.mix.store(getFloat(o,"mix",v.mix.load()));v.mod.store(getFloat(o,"mod",v.mod.load()));v.drip.store(getFloat(o,"drip",v.drip.load()));}
-    auto cabVar=r->getProperty("cab");if(auto* o=cabVar.getDynamicObject()){auto p=audioEngine.getCabMicEngine().getParameters();p.cab=(guitardsp::hq::CabType)juce::jlimit(0,3,getInt(o,"cab",(int)p.cab));p.mic=(guitardsp::hq::MicType)juce::jlimit(0,2,getInt(o,"mic",(int)p.mic));p.position=getFloat(o,"position",p.position);p.distance=getFloat(o,"distance",p.distance);p.resonance=getFloat(o,"resonance",p.resonance);p.lowCutHz=getFloat(o,"lowCut",p.lowCutHz);p.highCutHz=getFloat(o,"highCut",p.highCutHz);p.mix=getFloat(o,"mix",p.mix);audioEngine.getCabMicEngine().setParameters(p);audioEngine.getCabMicEngine().setEnabled(getBool(o,"enabled",audioEngine.getCabMicEngine().isEnabled()));}
-    refreshPagesFromEngine(); return true;
+    auto* r=preset.getDynamicObject();if(r==nullptr)return false;const float in=getFloat(r,"inputGainDb",(float)inputGainSlider.getValue()),out=getFloat(r,"outputGainDb",(float)outputGainSlider.getValue());inputGainSlider.setValue(in,juce::dontSendNotification);outputGainSlider.setValue(out,juce::dontSendNotification);audioEngine.setInputGainDb(in);audioEngine.setOutputGainDb(out);const int am=juce::jlimit(0,1,getInt(r,"ampMode",0));audioEngine.setAmpMode((SignalChain::AmpMode)am);ampModeSelector.setSelectedId(am+1,juce::dontSendNotification);const bool bp=getBool(r,"bypass",false);bypassButton.setToggleState(bp,juce::dontSendNotification);audioEngine.setBypass(bp);
+    auto lv=r->getProperty("legacyStages");if(auto* a=lv.getArray()){auto p=audioEngine.getAmpEngine().getParameters();for(int i=0;i<juce::jmin((int)a->size(),AmpEngine::numStages);++i){auto* o=(*a)[i].getDynamicObject();auto& s=p[(size_t)i];s.preHpHz=getFloat(o,"preHp",s.preHpHz);s.preLpHz=getFloat(o,"preLp",s.preLpHz);s.drive=getFloat(o,"drive",s.drive);s.bias=getFloat(o,"bias",s.bias);s.postLpHz=getFloat(o,"postLp",s.postLpHz);s.output=getFloat(o,"output",s.output);s.nonlinear=getFloat(o,"nonlinear",s.nonlinear);s.clipShape=getFloat(o,"clipShape",s.clipShape);}audioEngine.getAmpEngine().setParameters(p);}
+    auto hv=r->getProperty("hqAmp");if(auto* o=hv.getDynamicObject()){auto p=audioEngine.getHQAmpEngine().getParameters();auto sv=o->getProperty("stages");if(auto* a=sv.getArray())for(int i=0;i<juce::jmin((int)a->size(),20);++i){auto* so=(*a)[i].getDynamicObject();auto& s=p.stage[(size_t)i];s.preHpHz=getFloat(so,"preHp",s.preHpHz);s.preLpHz=getFloat(so,"preLp",s.preLpHz);s.drive=getFloat(so,"drive",s.drive);s.bias=getFloat(so,"bias",s.bias);s.asymmetry=getFloat(so,"asym",s.asymmetry);s.memory=getFloat(so,"memory",s.memory);s.postLpHz=getFloat(so,"postLp",s.postLpHz);s.output=getFloat(so,"output",s.output);}p.bassDb=getFloat(o,"bass",p.bassDb);p.midDb=getFloat(o,"mid",p.midDb);p.trebleDb=getFloat(o,"treble",p.trebleDb);p.sag=getFloat(o,"sag",p.sag);p.sagRecoveryMs=getFloat(o,"sagRecovery",p.sagRecoveryMs);p.damping=getFloat(o,"damping",p.damping);p.presence=getFloat(o,"presence",p.presence);p.biasExcursion=getFloat(o,"biasExcursion",p.biasExcursion);p.transformerSaturation=getFloat(o,"transformerSat",p.transformerSaturation);p.outputDb=getFloat(o,"outputDb",p.outputDb);audioEngine.getHQAmpEngine().setParameters(p);}
+    auto& rack=audioEngine.getHQEffectsRack();auto pv=r->getProperty("pedals");if(auto* a=pv.getArray())for(int i=0;i<juce::jmin((int)a->size(),guitardsp::hq::HQEffectsRack::pedalSlots);++i){auto* o=(*a)[i].getDynamicObject();auto& p=rack.pedalSlot(i);p.enabled.store(getBool(o,"enabled",p.enabled.load()));p.model.store(juce::jlimit(0,8,getInt(o,"model",p.model.load())));p.drive.store(getFloat(o,"drive",p.drive.load()));p.tone.store(getFloat(o,"tone",p.tone.load()));p.levelDb.store(getFloat(o,"level",p.levelDb.load()));p.mix.store(getFloat(o,"mix",p.mix.load()));p.aux1.store(getFloat(o,"aux1",p.aux1.load()));p.aux2.store(getFloat(o,"aux2",p.aux2.load()));p.aux3.store(getFloat(o,"aux3",p.aux3.load()));}
+    auto gv=r->getProperty("gate");if(auto* o=gv.getDynamicObject()){auto& g=rack.gateControl();rack.setDynamicsMode((guitardsp::hq::HQEffectsRack::DynamicsMode)juce::jlimit(0,3,getInt(o,"mode",(int)rack.getDynamicsMode())));g.thresholdDb.store(getFloat(o,"threshold",g.thresholdDb.load()));g.rangeDb.store(getFloat(o,"range",g.rangeDb.load()));g.ratio.store(getFloat(o,"ratio",g.ratio.load()));g.attackMs.store(getFloat(o,"attack",g.attackMs.load()));g.holdMs.store(getFloat(o,"hold",g.holdMs.load()));g.releaseMs.store(getFloat(o,"release",g.releaseMs.load()));g.hysteresisDb.store(getFloat(o,"hysteresis",g.hysteresisDb.load()));g.sidechainHpHz.store(getFloat(o,"hp",g.sidechainHpHz.load()));g.sidechainLpHz.store(getFloat(o,"lp",g.sidechainLpHz.load()));}
+    auto mv=r->getProperty("mod");if(auto* o=mv.getDynamicObject()){auto& m=rack.modulationControl();rack.setModulationMode((guitardsp::hq::HQEffectsRack::ModulationMode)juce::jlimit(0,5,getInt(o,"mode",(int)rack.getModulationMode())));m.rateHz.store(getFloat(o,"rate",m.rateHz.load()));m.depth.store(getFloat(o,"depth",m.depth.load()));m.mix.store(getFloat(o,"mix",m.mix.load()));m.feedback.store(getFloat(o,"feedback",m.feedback.load()));m.manual.store(getFloat(o,"manual",m.manual.load()));m.shape.store(getFloat(o,"shape",m.shape.load()));}
+    auto dv=r->getProperty("delay");if(auto* o=dv.getDynamicObject()){auto& d=rack.delayControl();rack.setDelayEnabled(getBool(o,"enabled",rack.isDelayEnabled()));d.flavor.store(juce::jlimit(0,2,getInt(o,"type",d.flavor.load())));d.timeMs.store(getFloat(o,"time",d.timeMs.load()));d.feedback.store(getFloat(o,"feedback",d.feedback.load()));d.mix.store(getFloat(o,"mix",d.mix.load()));d.lowCutHz.store(getFloat(o,"lowCut",d.lowCutHz.load()));d.highCutHz.store(getFloat(o,"highCut",d.highCutHz.load()));d.drive.store(getFloat(o,"drive",d.drive.load()));d.wow.store(getFloat(o,"wow",d.wow.load()));d.flutter.store(getFloat(o,"flutter",d.flutter.load()));d.age.store(getFloat(o,"age",d.age.load()));}
+    auto rv=r->getProperty("reverb");if(auto* o=rv.getDynamicObject()){auto& v=rack.reverbControl();rack.setReverbEnabled(getBool(o,"enabled",rack.isReverbEnabled()));v.flavor.store(juce::jlimit(0,3,getInt(o,"type",v.flavor.load())));v.size.store(getFloat(o,"size",v.size.load()));v.decay.store(getFloat(o,"decay",v.decay.load()));v.damping.store(getFloat(o,"damping",v.damping.load()));v.preDelayMs.store(getFloat(o,"preDelay",v.preDelayMs.load()));v.mix.store(getFloat(o,"mix",v.mix.load()));v.mod.store(getFloat(o,"mod",v.mod.load()));v.drip.store(getFloat(o,"drip",v.drip.load()));}
+    auto cv=r->getProperty("cab");if(auto* o=cv.getDynamicObject()){auto p=audioEngine.getCabMicEngine().getParameters();p.cab=(guitardsp::hq::CabType)juce::jlimit(0,3,getInt(o,"cab",(int)p.cab));p.mic=(guitardsp::hq::MicType)juce::jlimit(0,2,getInt(o,"mic",(int)p.mic));p.position=getFloat(o,"position",p.position);p.distance=getFloat(o,"distance",p.distance);p.resonance=getFloat(o,"resonance",p.resonance);p.lowCutHz=getFloat(o,"lowCut",p.lowCutHz);p.highCutHz=getFloat(o,"highCut",p.highCutHz);p.mix=getFloat(o,"mix",p.mix);audioEngine.getCabMicEngine().setParameters(p);audioEngine.getCabMicEngine().setEnabled(getBool(o,"enabled",audioEngine.getCabMicEngine().isEnabled()));}
+    refreshPagesFromEngine();return true;
 }
 
-void MainView::saveCurrentPreset()
-{
-    auto name=presetSelector.getText().trim();if(name.isEmpty()||name=="Type preset name")name="Preset 1";
-    auto file=getPresetFile(name);if(file.replaceWithText(juce::JSON::toString(capturePreset(),false)))refreshPresetList(name);
-}
+void MainView::saveCurrentPreset(){auto name=presetSelector.getText().trim();if(name.isEmpty()||name=="Type preset name")name="Preset 1";auto file=getPresetFile(name);if(file.replaceWithText(juce::JSON::toString(capturePreset(),false)))refreshPresetList(name);}
 void MainView::loadSelectedPreset(){auto name=presetSelector.getText().trim();auto file=getPresetFile(name);if(!file.existsAsFile())return;auto parsed=juce::JSON::parse(file.loadFileAsString());if(applyPreset(parsed))presetSelector.setText(name,juce::dontSendNotification);}
 void MainView::deleteSelectedPreset(){auto name=presetSelector.getText().trim();auto file=getPresetFile(name);if(file.existsAsFile())file.deleteFile();refreshPresetList();}
 void MainView::refreshPagesFromEngine(){ampPage.refreshFromEngine();pedalPage.refreshFromEngine();cabPage.refreshFromEngine();effectsPage.refreshFromEngine();}
 
-void MainView::paint(juce::Graphics& g)
-{
-    g.fillAll(juce::Colour::fromRGB(9,12,16));auto r=getLocalBounds();auto header=r.removeFromTop(76);g.setColour(juce::Colour::fromRGB(14,18,24));g.fillRect(header);
-    g.setColour(juce::Colours::white);g.setFont(juce::Font(24.0f,juce::Font::bold));g.drawText("GuitarDSP-Pro",header.removeFromLeft(250).reduced(20,0),juce::Justification::centredLeft);
-    g.setColour(juce::Colour::fromRGB(222,110,58));g.setFont(juce::Font(13.0f));g.drawText("AMP LAB / SAFE OUTPUT",header.removeFromLeft(190),juce::Justification::centredLeft);
-    g.setColour(juce::Colour::fromRGB(12,16,21));g.fillRect(0,76,getWidth(),38);
-}
-void MainView::resized()
-{
-    auto r=getLocalBounds();auto header=r.removeFromTop(76);auto controls=header.removeFromRight(845).reduced(8,8);
-    inputLabel.setBounds(controls.removeFromLeft(48));inputGainSlider.setBounds(controls.removeFromLeft(170).reduced(3,10));inputMeterLabel.setBounds(controls.removeFromLeft(70));controls.removeFromLeft(5);
-    outputLabel.setBounds(controls.removeFromLeft(58));outputGainSlider.setBounds(controls.removeFromLeft(170).reduced(3,10));outputMeterLabel.setBounds(controls.removeFromLeft(70));ampModeSelector.setBounds(controls.removeFromLeft(135).reduced(4,10));bypassButton.setBounds(controls.removeFromLeft(90).reduced(5,10));
-    auto presetBar=r.removeFromTop(38).reduced(14,4);presetLabel.setBounds(presetBar.removeFromLeft(58));presetSelector.setBounds(presetBar.removeFromLeft(260));presetBar.removeFromLeft(6);presetSaveButton.setBounds(presetBar.removeFromLeft(72));presetBar.removeFromLeft(6);presetDeleteButton.setBounds(presetBar.removeFromLeft(82));
-    navigation.setBounds(r.removeFromTop(54));if(visiblePage!=nullptr)visiblePage->setBounds(r.reduced(14));
-}
-void MainView::showPage(NavigationBar::Page page)
-{
-    juce::Component* next=nullptr;switch(page){case NavigationBar::Page::amp:next=&ampPage;break;case NavigationBar::Page::pedal:next=&pedalPage;break;case NavigationBar::Page::cab:next=&cabPage;break;case NavigationBar::Page::effects:next=&effectsPage;break;case NavigationBar::Page::settings:next=&settingsPage;break;}
-    if(visiblePage!=nullptr)visiblePage->setVisible(false);visiblePage=next;if(visiblePage!=nullptr){visiblePage->setVisible(true);visiblePage->toFront(false);}resized();
-}
-void MainView::timerCallback()
-{
-    const float inDb=juce::jmax(audioEngine.getInputPeak(0),audioEngine.getInputPeak(1));const float outDb=juce::jmax(audioEngine.getOutputPeak(0),audioEngine.getOutputPeak(1));
-    inputMeterLabel.setText(juce::String(inDb,1)+" dB",juce::dontSendNotification);outputMeterLabel.setText(juce::String(outDb,1)+" dB",juce::dontSendNotification);
-}
+void MainView::paint(juce::Graphics& g){g.fillAll(juce::Colour::fromRGB(9,12,16));auto r=getLocalBounds();auto header=r.removeFromTop(76);g.setColour(juce::Colour::fromRGB(14,18,24));g.fillRect(header);g.setColour(juce::Colours::white);g.setFont(juce::Font(24.0f,juce::Font::bold));g.drawText("GuitarDSP-Pro",header.removeFromLeft(250).reduced(20,0),juce::Justification::centredLeft);g.setColour(juce::Colour::fromRGB(222,110,58));g.setFont(juce::Font(13.0f));g.drawText("AMP LAB / SAFE OUTPUT",header.removeFromLeft(190),juce::Justification::centredLeft);g.setColour(juce::Colour::fromRGB(12,16,21));g.fillRect(0,76,getWidth(),38);}
+void MainView::resized(){auto r=getLocalBounds();auto header=r.removeFromTop(76);auto controls=header.removeFromRight(845).reduced(8,8);inputLabel.setBounds(controls.removeFromLeft(48));inputGainSlider.setBounds(controls.removeFromLeft(170).reduced(3,10));inputMeterLabel.setBounds(controls.removeFromLeft(70));controls.removeFromLeft(5);outputLabel.setBounds(controls.removeFromLeft(58));outputGainSlider.setBounds(controls.removeFromLeft(170).reduced(3,10));outputMeterLabel.setBounds(controls.removeFromLeft(70));ampModeSelector.setBounds(controls.removeFromLeft(135).reduced(4,10));bypassButton.setBounds(controls.removeFromLeft(90).reduced(5,10));auto pb=r.removeFromTop(38).reduced(14,4);presetLabel.setBounds(pb.removeFromLeft(58));presetSelector.setBounds(pb.removeFromLeft(260));pb.removeFromLeft(6);presetSaveButton.setBounds(pb.removeFromLeft(72));pb.removeFromLeft(6);presetDeleteButton.setBounds(pb.removeFromLeft(82));navigation.setBounds(r.removeFromTop(54));if(visiblePage!=nullptr)visiblePage->setBounds(r.reduced(14));}
+void MainView::showPage(NavigationBar::Page page){juce::Component* next=nullptr;switch(page){case NavigationBar::Page::amp:next=&ampPage;break;case NavigationBar::Page::pedal:next=&pedalPage;break;case NavigationBar::Page::cab:next=&cabPage;break;case NavigationBar::Page::effects:next=&effectsPage;break;case NavigationBar::Page::settings:next=&settingsPage;break;}if(visiblePage!=nullptr)visiblePage->setVisible(false);visiblePage=next;if(visiblePage!=nullptr){visiblePage->setVisible(true);visiblePage->toFront(false);}resized();}
+void MainView::timerCallback(){const float inDb=juce::jmax(audioEngine.getInputPeak(0),audioEngine.getInputPeak(1)),outDb=juce::jmax(audioEngine.getOutputPeak(0),audioEngine.getOutputPeak(1));inputMeterLabel.setText(juce::String(inDb,1)+" dB",juce::dontSendNotification);outputMeterLabel.setText(juce::String(outDb,1)+" dB",juce::dontSendNotification);}
