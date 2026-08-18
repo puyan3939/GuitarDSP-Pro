@@ -1,74 +1,105 @@
 #include "AudioEngine.h"
+#include <cmath>
 
 AudioEngine::AudioEngine() = default;
+AudioEngine::~AudioEngine() = default;
 
-AudioEngine::~AudioEngine()
+void AudioEngine::prepare(double sampleRate, int maximumBlockSize)
 {
-    shutdown();
+    signalChain.prepare(sampleRate, maximumBlockSize);
+    for (auto& meter : inputMeters) meter.reset();
+    for (auto& meter : outputMeters) meter.reset();
+    for (auto& value : inputRmsDb) value.store(-100.0f, std::memory_order_relaxed);
+    for (auto& value : outputRmsDb) value.store(-100.0f, std::memory_order_relaxed);
 }
 
-void AudioEngine::initialise()
-{
-    deviceManager.initialise(1, 2, nullptr, true);
-
-    if (auto* device = deviceManager.getCurrentAudioDevice())
-    {
-        juce::AudioDeviceManager::AudioDeviceSetup setup;
-        deviceManager.getAudioDeviceSetup(setup);
-        setup.sampleRate = 48000.0;
-        setup.bufferSize = 256;
-        deviceManager.setAudioDeviceSetup(setup, true);
-    }
-
-    deviceManager.addAudioCallback(this);
-}
-
-void AudioEngine::shutdown()
-{
-    deviceManager.removeAudioCallback(this);
-    deviceManager.closeAudioDevice();
-}
-
-void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
-{
-    if (device == nullptr)
-        return;
-
-    const auto sampleRate = device->getCurrentSampleRate();
-    const auto blockSize = device->getCurrentBufferSizeSamples();
-
-    monoBuffer.setSize(1, blockSize, false, false, true);
-    signalChain.prepare(sampleRate, blockSize);
-}
-
-void AudioEngine::audioDeviceStopped()
+void AudioEngine::release()
 {
     signalChain.reset();
-    monoBuffer.setSize(1, 0);
+    for (auto& meter : inputMeters) meter.reset();
+    for (auto& meter : outputMeters) meter.reset();
+    for (auto& value : inputRmsDb) value.store(-100.0f, std::memory_order_relaxed);
+    for (auto& value : outputRmsDb) value.store(-100.0f, std::memory_order_relaxed);
 }
 
-void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
-                                                   int numInputChannels,
-                                                   float* const* outputChannelData,
-                                                   int numOutputChannels,
-                                                   int numSamples,
-                                                   const juce::AudioIODeviceCallbackContext&)
+void AudioEngine::process(juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
 {
-    monoBuffer.setSize(1, numSamples, false, false, true);
-    auto* mono = monoBuffer.getWritePointer(0);
+    if (numSamples <= 0 || startSample < 0 || startSample + numSamples > buffer.getNumSamples())
+        return;
 
-    if (numInputChannels > 0 && inputChannelData[0] != nullptr)
-        juce::FloatVectorOperations::copy(mono, inputChannelData[0], numSamples);
-    else
-        juce::FloatVectorOperations::clear(mono, numSamples);
+    measureBlock(buffer, startSample, numSamples, inputMeters, inputRmsDb);
+    signalChain.process(buffer, startSample, numSamples);
+    measureBlock(buffer, startSample, numSamples, outputMeters, outputRmsDb);
+}
 
-    signalChain.processMono(monoBuffer);
+void AudioEngine::setInputGainDb(float gainDb) noexcept
+{
+    signalChain.setInputGainDb(gainDb);
+}
 
-    for (int ch = 0; ch < numOutputChannels; ++ch)
+void AudioEngine::setOutputGainDb(float gainDb) noexcept
+{
+    signalChain.setOutputGainDb(gainDb);
+}
+
+void AudioEngine::setBypass(bool enabled) noexcept
+{
+    signalChain.setBypass(enabled);
+}
+
+void AudioEngine::setMonoInputToStereo(bool enabled) noexcept
+{
+    signalChain.setMonoInputToStereo(enabled);
+}
+
+float AudioEngine::getInputPeak(int channel) const noexcept
+{
+    return (channel >= 0 && channel < 2) ? inputMeters[(size_t)channel].getDb() : -100.0f;
+}
+
+float AudioEngine::getInputRms(int channel) const noexcept
+{
+    return (channel >= 0 && channel < 2) ? inputRmsDb[(size_t)channel].load(std::memory_order_relaxed) : -100.0f;
+}
+
+float AudioEngine::getOutputPeak(int channel) const noexcept
+{
+    return (channel >= 0 && channel < 2) ? outputMeters[(size_t)channel].getDb() : -100.0f;
+}
+
+float AudioEngine::getOutputRms(int channel) const noexcept
+{
+    return (channel >= 0 && channel < 2) ? outputRmsDb[(size_t)channel].load(std::memory_order_relaxed) : -100.0f;
+}
+
+void AudioEngine::measureBlock(const juce::AudioBuffer<float>& buffer,
+                               int startSample,
+                               int numSamples,
+                               std::array<LevelMeter, 2>& peakMeters,
+                               std::array<std::atomic<float>, 2>& rmsDb)
+{
+    const int channels = juce::jmin(2, buffer.getNumChannels());
+    for (int ch = 0; ch < 2; ++ch)
     {
-        if (outputChannelData[ch] == nullptr)
+        if (ch >= channels)
+        {
+            peakMeters[(size_t)ch].pushPeak(0.0f);
+            rmsDb[(size_t)ch].store(-100.0f, std::memory_order_relaxed);
             continue;
+        }
 
-        juce::FloatVectorOperations::copy(outputChannelData[ch], mono, numSamples);
+        const auto* data = buffer.getReadPointer(ch, startSample);
+        float peak = 0.0f;
+        double sumSquares = 0.0;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float x = data[i];
+            peak = juce::jmax(peak, std::abs(x));
+            sumSquares += static_cast<double>(x) * static_cast<double>(x);
+        }
+
+        peakMeters[(size_t)ch].pushPeak(peak);
+        const float rms = numSamples > 0 ? static_cast<float>(std::sqrt(sumSquares / static_cast<double>(numSamples))) : 0.0f;
+        rmsDb[(size_t)ch].store(juce::Decibels::gainToDecibels(rms, -100.0f), std::memory_order_relaxed);
     }
 }
