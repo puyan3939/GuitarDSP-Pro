@@ -4,6 +4,7 @@
 #include "../dsp/amp/AmpEngine.h"
 #include "../hq_preload/dsp/amp/AmpEngineHQ.h"
 #include "../hq_preload/dsp/HQEffectsRack.h"
+#include "../hq_preload/dsp/cab/CabMicEngineHQ.h"
 
 class SignalChain
 {
@@ -12,10 +13,7 @@ public:
 
     void prepare(double sampleRate, int maximumBlockSize);
     void reset();
-
-    void process(juce::AudioBuffer<float>& buffer,
-                 int startSample,
-                 int numSamples);
+    void process(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
 
     void setInputGainDb(float gainDb) noexcept;
     void setOutputGainDb(float gainDb) noexcept;
@@ -27,6 +25,7 @@ public:
     AmpEngine& getAmpEngine() noexcept { return ampEngine; }
     guitardsp::hq::AmpEngineHQ& getHQAmpEngine() noexcept { return hqAmpEngine; }
     guitardsp::hq::HQEffectsRack& getHQEffectsRack() noexcept { return hqEffects; }
+    guitardsp::hq::CabMicEngineHQ& getCabMicEngine() noexcept { return cabMic; }
 
 private:
     void copyDetectedMonoToStereo(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
@@ -42,6 +41,7 @@ private:
     AmpEngine ampEngine;
     guitardsp::hq::AmpEngineHQ hqAmpEngine;
     guitardsp::hq::HQEffectsRack hqEffects;
+    guitardsp::hq::CabMicEngineHQ cabMic;
     SafetyLimiter limiter;
 
     std::atomic<float> inputGainDb { -6.0f };
