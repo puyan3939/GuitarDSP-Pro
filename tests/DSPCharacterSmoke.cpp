@@ -1,6 +1,7 @@
 #include <JuceHeader.h>
 #include <cmath>
 #include <iostream>
+#include <array>
 #include "../hq_preload/dsp/amp/AmpEngineHQ.h"
 #include "../hq_preload/dsp/HQEffectsRack.h"
 #include "../hq_preload/dsp/cab/CabMicEngineHQ.h"
@@ -10,6 +11,7 @@ void fillSine(juce::AudioBuffer<float>& b,float amplitude=0.08f,float hz=440.0f,
 bool sane(const juce::AudioBuffer<float>& b,float maxAbs=20.0f){for(int ch=0;ch<b.getNumChannels();++ch){const auto*d=b.getReadPointer(ch);for(int i=0;i<b.getNumSamples();++i)if(!std::isfinite(d[i])||std::abs(d[i])>maxAbs)return false;}return true;}
 float channelRms(const juce::AudioBuffer<float>& b,int ch){if(ch<0||ch>=b.getNumChannels())return 0;double s=0;const auto*d=b.getReadPointer(ch);for(int i=0;i<b.getNumSamples();++i)s+=(double)d[i]*d[i];return b.getNumSamples()>0?(float)std::sqrt(s/(double)b.getNumSamples()):0;}
 float rms(const juce::AudioBuffer<float>& b){double s=0;int n=0;for(int ch=0;ch<b.getNumChannels();++ch){auto*d=b.getReadPointer(ch);for(int i=0;i<b.getNumSamples();++i){s+=(double)d[i]*d[i];++n;}}return n>0?(float)std::sqrt(s/(double)n):0;}
+float acRms(const juce::AudioBuffer<float>& b){double s=0;int n=0;for(int ch=0;ch<b.getNumChannels();++ch){const auto*d=b.getReadPointer(ch);double mean=0;for(int i=0;i<b.getNumSamples();++i)mean+=d[i];mean/=juce::jmax(1,b.getNumSamples());for(int i=0;i<b.getNumSamples();++i){const double v=(double)d[i]-mean;s+=v*v;++n;}}return n>0?(float)std::sqrt(s/(double)n):0;}
 bool require(bool cond,const char* name){std::cout<<(cond?"PASS ":"FAIL ")<<name<<'\n';return cond;}
 }
 
@@ -21,18 +23,30 @@ int main(){
     guitardsp::hq::HQEffectsRack rack;rack.prepare(sr,block);
     for(int model=0;model<9;++model){rack.reset();auto&slot=rack.pedalSlot(0);slot.enabled.store(true);slot.model.store(model);slot.drive.store(0.8f);slot.mix.store(1.0f);fillSine(b);rack.processPreAmp(b,0,block);const std::string name="Pedal model "+std::to_string(model)+" finite";ok&=require(sane(b),name.c_str());slot.enabled.store(false);}
 
-    // Regression guard for the original pedal-noise problem: a tiny input must not be
-    // multiplied by an extreme single-stage pre-gain before clipping. Real fuzzes can
-    // have substantial small-signal gain, so the limit is deliberately generous (~30 dB).
+    static constexpr std::array<const char*,9> pedalNames{
+        "Clean Boost","Treble Boost","Mid OD","Transparent OD","Hard Distortion",
+        "Germanium Fuzz","Silicon Fuzz","Octave Fuzz","Velcro Fuzz"};
+
+    // Noise regression: asymmetric bias is allowed, but digital silence must remain silence.
+    // For a tiny AC input we measure AC gain after removing DC, so a valid bias shift is not
+    // misclassified as broadband noise amplification.
     for(int model=0;model<9;++model){
         guitardsp::hq::PedalEngineHQ pedal; pedal.prepare(sr,block);
         guitardsp::hq::PedalParams pp; pp.drive=0.8f; pp.tone=0.55f; pp.levelDb=0.0f; pp.lowCutHz=55.0f;
         pp.focusHz=900.0f; pp.midDb=0.0f; pp.cleanMix=0.0f; pp.octave=0.65f; pp.starve=0.55f; pp.gate=0.15f;
         pedal.setType((guitardsp::hq::PedalType)model); pedal.setParameters(pp);
+
+        juce::AudioBuffer<float> silent(1,block); silent.clear(); pedal.process(silent);
+        const std::string silenceName=std::string(pedalNames[(size_t)model])+" zero-input silence";
+        ok&=require(sane(silent,0.01f)&&rms(silent)<1.0e-7f,silenceName.c_str());
+
+        pedal.reset(); pedal.setParameters(pp);
         juce::AudioBuffer<float> tiny(1,block); fillSine(tiny,1.0e-5f,997.0f,sr);
-        const float tinyIn=rms(tiny); pedal.process(tiny); const float gain=rms(tiny)/(tinyIn+1.0e-12f);
-        const std::string name="Pedal model "+std::to_string(model)+" low-level gain bounded";
-        ok&=require(sane(tiny,0.1f)&&gain<32.0f,name.c_str());
+        const float tinyIn=acRms(tiny); pedal.process(tiny); const float gain=acRms(tiny)/(tinyIn+1.0e-12f);
+        const float gainDb=20.0f*std::log10(juce::jmax(gain,1.0e-12f));
+        std::cout<<"INFO "<<pedalNames[(size_t)model]<<" low-level AC gain "<<gainDb<<" dB\n";
+        const std::string gainName=std::string(pedalNames[(size_t)model])+" low-level AC gain bounded";
+        ok&=require(sane(tiny,0.1f)&&gain<32.0f,gainName.c_str());
     }
 
     rack.setDynamicsMode(guitardsp::hq::HQEffectsRack::DynamicsMode::studioCompressor);fillSine(b,0.3f);rack.processPreAmp(b,0,block);ok&=require(sane(b),"Studio compressor finite");rack.setDynamicsMode(guitardsp::hq::HQEffectsRack::DynamicsMode::off);
