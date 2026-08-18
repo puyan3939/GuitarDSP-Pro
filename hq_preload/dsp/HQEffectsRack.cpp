@@ -3,6 +3,10 @@
 namespace guitardsp::hq {
 
 void HQEffectsRack::prepare(double sampleRate, int maximumBlockSize) {
+    preparedMaxBlock = juce::jmax(1, maximumBlockSize);
+    pedalMonoWork.setSize(1, preparedMaxBlock, false, true, false);
+    gateCleanKey.setSize(stereoChannels, preparedMaxBlock, false, true, false);
+
     for (int ch = 0; ch < stereoChannels; ++ch) {
         for (auto& pedal : pedals[(size_t)ch]) pedal.prepare(sampleRate, maximumBlockSize);
         noiseGate[(size_t)ch].prepare(sampleRate);
@@ -66,22 +70,24 @@ void HQEffectsRack::updateDynamicParameters() {
 }
 
 void HQEffectsRack::processPreAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples) {
+    if (numSamples <= 0) return;
+    jassert(numSamples <= preparedMaxBlock);
+
     updateDynamicParameters();
     const auto mode = getDynamicsMode();
     const int channels = juce::jmin(stereoChannels, buffer.getNumChannels());
 
-    // Preserve the clean guitar signal as the precision-gate detector key.  The gate
-    // itself is applied after all pedal slots, so pedal-generated hiss is attenuated
-    // without allowing that hiss to hold the detector open.
-    juce::AudioBuffer<float> cleanKey(channels, numSamples);
-    for (int ch=0; ch<channels; ++ch)
-        cleanKey.copyFrom(ch,0,buffer,ch,startSample,numSamples);
+    // Only copy the detector key when the gate is actually active. The storage itself
+    // is preallocated in prepare(), so this path performs no heap allocation.
+    if (mode == DynamicsMode::gate) {
+        for (int ch = 0; ch < channels; ++ch)
+            gateCleanKey.copyFrom(ch, 0, buffer, ch, startSample, numSamples);
+    }
 
     // Compressors belong before the pedals. The precision gate is intentionally deferred.
     if (mode == DynamicsMode::studioCompressor || mode == DynamicsMode::guitarCompressor)
         applyDynamics(buffer, startSample, numSamples);
 
-    juce::AudioBuffer<float> mono(1, numSamples);
     for (int slot = 0; slot < pedalSlots; ++slot) {
         auto& control = pedalControls[(size_t)slot];
         if (!control.enabled.load(std::memory_order_relaxed)) continue;
@@ -106,18 +112,23 @@ void HQEffectsRack::processPreAmp(juce::AudioBuffer<float>& buffer, int startSam
             auto& pedal = pedals[(size_t)ch][(size_t)slot];
             pedal.setType(type);
             pedal.setParameters(p);
-            mono.copyFrom(0, 0, buffer, ch, startSample, numSamples);
-            pedal.process(mono);
-            buffer.copyFrom(ch, startSample, mono, 0, 0, numSamples);
+            pedalMonoWork.copyFrom(0, 0, buffer, ch, startSample, numSamples);
+
+            // PedalEngineHQ expects the logical buffer length to equal the block being processed.
+            // The buffer memory remains preallocated; avoid reallocating on the audio thread.
+            pedalMonoWork.setSize(1, numSamples, true, false, true);
+            pedal.process(pedalMonoWork);
+            buffer.copyFrom(ch, startSample, pedalMonoWork, 0, 0, numSamples);
+            pedalMonoWork.setSize(1, preparedMaxBlock, true, false, true);
         }
     }
 
     if (mode == DynamicsMode::gate) {
-        for (int ch=0; ch<channels; ++ch) {
-            auto* audio=buffer.getWritePointer(ch,startSample);
-            const auto* key=cleanKey.getReadPointer(ch);
-            for (int i=0;i<numSamples;++i)
-                audio[i]=noiseGate[(size_t)ch].processKeyed(audio[i],key[i]);
+        for (int ch = 0; ch < channels; ++ch) {
+            auto* audio = buffer.getWritePointer(ch, startSample);
+            const auto* key = gateCleanKey.getReadPointer(ch);
+            for (int i = 0; i < numSamples; ++i)
+                audio[i] = noiseGate[(size_t)ch].processKeyed(audio[i], key[i]);
         }
     }
 }
