@@ -3,6 +3,7 @@
 MainView::MainView(AudioEngine& engine)
     : audioEngine(engine),
       ampPage(engine.getAmpEngine()),
+      pedalPage(engine.getHQEffectsRack()),
       cabPage(engine.getCabMicEngine()),
       settingsPage(engine.getDeviceManager())
 {
