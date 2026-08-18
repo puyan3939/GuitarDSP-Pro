@@ -67,10 +67,21 @@ void HQEffectsRack::updateDynamicParameters() {
 
 void HQEffectsRack::processPreAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples) {
     updateDynamicParameters();
-    applyDynamics(buffer, startSample, numSamples);
+    const auto mode = getDynamicsMode();
+    const int channels = juce::jmin(stereoChannels, buffer.getNumChannels());
+
+    // Preserve the clean guitar signal as the precision-gate detector key.  The gate
+    // itself is applied after all pedal slots, so pedal-generated hiss is attenuated
+    // without allowing that hiss to hold the detector open.
+    juce::AudioBuffer<float> cleanKey(channels, numSamples);
+    for (int ch=0; ch<channels; ++ch)
+        cleanKey.copyFrom(ch,0,buffer,ch,startSample,numSamples);
+
+    // Compressors belong before the pedals. The precision gate is intentionally deferred.
+    if (mode == DynamicsMode::studioCompressor || mode == DynamicsMode::guitarCompressor)
+        applyDynamics(buffer, startSample, numSamples);
 
     juce::AudioBuffer<float> mono(1, numSamples);
-    const int channels = juce::jmin(stereoChannels, buffer.getNumChannels());
     for (int slot = 0; slot < pedalSlots; ++slot) {
         auto& control = pedalControls[(size_t)slot];
         if (!control.enabled.load(std::memory_order_relaxed)) continue;
@@ -98,6 +109,15 @@ void HQEffectsRack::processPreAmp(juce::AudioBuffer<float>& buffer, int startSam
             mono.copyFrom(0, 0, buffer, ch, startSample, numSamples);
             pedal.process(mono);
             buffer.copyFrom(ch, startSample, mono, 0, 0, numSamples);
+        }
+    }
+
+    if (mode == DynamicsMode::gate) {
+        for (int ch=0; ch<channels; ++ch) {
+            auto* audio=buffer.getWritePointer(ch,startSample);
+            const auto* key=cleanKey.getReadPointer(ch);
+            for (int i=0;i<numSamples;++i)
+                audio[i]=noiseGate[(size_t)ch].processKeyed(audio[i],key[i]);
         }
     }
 }
