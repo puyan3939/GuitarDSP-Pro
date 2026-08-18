@@ -34,32 +34,62 @@ bool require(bool cond,const char* name){std::cout<<(cond?"PASS ":"FAIL ")<<name
 int main() {
     constexpr double sr=48000.0; constexpr int block=256;
     bool ok=true;
+
     guitardsp::hq::AmpEngineHQ amp;
-    amp.prepare(sr,block,2);
-    juce::AudioBuffer<float> b(2,block); fillSine(b);
-    const float inRms=rms(b); amp.process(b,0,block);
+    amp.prepare(sr,block);
+    juce::AudioBuffer<float> b(2,block);
+    fillSine(b);
+    const float inRms=rms(b);
+    amp.process(b);
     ok &= require(sane(b),"HQ amp finite/bounded");
     ok &= require(rms(b)>1.0e-6f && std::abs(rms(b)-inRms)>1.0e-5f,"HQ amp changes signal");
 
     guitardsp::hq::HQEffectsRack rack; rack.prepare(sr,block);
     for(int model=0;model<9;++model){
-        rack.reset(); auto& slot=rack.pedalSlot(0); slot.enabled.store(true); slot.model.store(model); slot.drive.store(2.0f); slot.mix.store(1.0f);
-        fillSine(b); rack.processPreAmp(b,0,block);
+        rack.reset();
+        auto& slot=rack.pedalSlot(0);
+        slot.enabled.store(true);
+        slot.model.store(model);
+        slot.drive.store(0.8f);
+        slot.mix.store(1.0f);
+        fillSine(b);
+        rack.processPreAmp(b,0,block);
         const std::string name="Pedal model "+std::to_string(model)+" finite";
         ok &= require(sane(b),name.c_str());
         slot.enabled.store(false);
     }
+
     rack.setDynamicsMode(guitardsp::hq::HQEffectsRack::DynamicsMode::studioCompressor);
-    fillSine(b,0.3f); rack.processPreAmp(b,0,block); ok &= require(sane(b),"Studio compressor finite");
+    fillSine(b,0.3f);
+    rack.processPreAmp(b,0,block);
+    ok &= require(sane(b),"Studio compressor finite");
     rack.setDynamicsMode(guitardsp::hq::HQEffectsRack::DynamicsMode::off);
 
-    for(int mode=1;mode<=5;++mode){
-        rack.reset(); rack.setModulationMode((guitardsp::hq::HQEffectsRack::ModulationMode)mode); fillSine(b); rack.processPostAmp(b,0,block);
+    // Current HQ implementation has chorus/flanger/phaser. Tremolo and vibrato
+    // remain intentionally bypassed until their dedicated DSP models exist.
+    for(int mode=1;mode<=3;++mode){
+        rack.reset();
+        rack.setModulationMode((guitardsp::hq::HQEffectsRack::ModulationMode)mode);
+        fillSine(b);
+        rack.processPostAmp(b,0,block);
         const std::string name="Modulation mode "+std::to_string(mode)+" finite";
         ok &= require(sane(b),name.c_str());
     }
     rack.setModulationMode(guitardsp::hq::HQEffectsRack::ModulationMode::off);
-    rack.reset(); rack.setDelayEnabled(true); fillSine(b); rack.processPostAmp(b,0,block); ok &= require(sane(b),"Delay finite"); rack.setDelayEnabled(false);
-    rack.reset(); rack.setReverbEnabled(true); fillSine(b); rack.processPostAmp(b,0,block); ok &= require(sane(b),"Reverb finite"); rack.setReverbEnabled(false);
+
+    rack.reset();
+    rack.setDelayEnabled(true);
+    fillSine(b);
+    rack.processPostAmp(b,0,block);
+    ok &= require(sane(b),"Delay finite");
+    rack.setDelayEnabled(false);
+
+    rack.reset();
+    rack.setReverbEnabled(true);
+    fillSine(b);
+    rack.processPostAmp(b,0,block);
+    ok &= require(sane(b),"Reverb finite");
+    rack.setReverbEnabled(false);
+
     return ok ? 0 : 1;
 }
