@@ -19,13 +19,37 @@ void AudioEngine::initialise()
 
     if (auto* device = deviceManager.getCurrentAudioDevice())
     {
-        juce::AudioDeviceManager::AudioDeviceSetup setup;
-        deviceManager.getAudioDeviceSetup(setup);
-        setup.sampleRate = 48000.0;
-        setup.bufferSize = 256;
-        const auto setupError = deviceManager.setAudioDeviceSetup(setup, true);
-        if (setupError.isNotEmpty())
-            DBG("Requested 48 kHz / 256 samples unavailable: " + setupError);
+        juce::AudioDeviceManager::AudioDeviceSetup originalSetup;
+        deviceManager.getAudioDeviceSetup(originalSetup);
+        auto requestedSetup = originalSetup;
+
+        const auto sampleRates = device->getAvailableSampleRates();
+        const auto bufferSizes = device->getAvailableBufferSizes();
+        const bool supports48k = sampleRates.contains(48000.0);
+        const bool supports256 = bufferSizes.contains(256);
+
+        // Do not force a device reopen unless the requested format is actually
+        // advertised by the active driver. Some ALSA devices can fail to restart
+        // when an unsupported format is requested or another client owns the device.
+        if (supports48k)
+            requestedSetup.sampleRate = 48000.0;
+        if (supports256)
+            requestedSetup.bufferSize = 256;
+
+        const bool needsChange = requestedSetup.sampleRate != originalSetup.sampleRate
+                              || requestedSetup.bufferSize != originalSetup.bufferSize;
+
+        if (needsChange)
+        {
+            const auto setupError = deviceManager.setAudioDeviceSetup(requestedSetup, true);
+            if (setupError.isNotEmpty())
+            {
+                DBG("Requested audio format unavailable: " + setupError + ". Restoring previous setup.");
+                const auto restoreError = deviceManager.setAudioDeviceSetup(originalSetup, true);
+                if (restoreError.isNotEmpty())
+                    DBG("Could not restore previous audio setup: " + restoreError);
+            }
+        }
     }
 
     deviceManager.addAudioCallback(this);
