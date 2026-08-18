@@ -23,31 +23,25 @@ int main(){
     guitardsp::hq::HQEffectsRack rack;rack.prepare(sr,block);
     for(int model=0;model<9;++model){rack.reset();auto&slot=rack.pedalSlot(0);slot.enabled.store(true);slot.model.store(model);slot.drive.store(0.8f);slot.mix.store(1.0f);fillSine(b);rack.processPreAmp(b,0,block);const std::string name="Pedal model "+std::to_string(model)+" finite";ok&=require(sane(b),name.c_str());slot.enabled.store(false);}
 
-    static constexpr std::array<const char*,9> pedalNames{
-        "Clean Boost","Treble Boost","Mid OD","Transparent OD","Hard Distortion",
-        "Germanium Fuzz","Silicon Fuzz","Octave Fuzz","Velcro Fuzz"};
-
-    // Noise regression: asymmetric bias is allowed, but digital silence must remain silence.
-    // For a tiny AC input we measure AC gain after removing DC, so a valid bias shift is not
-    // misclassified as broadband noise amplification.
+    static constexpr std::array<const char*,9> pedalNames{"Clean Boost","Treble Boost","Mid OD","Transparent OD","Hard Distortion","Germanium Fuzz","Silicon Fuzz","Octave Fuzz","Velcro Fuzz"};
     for(int model=0;model<9;++model){
         guitardsp::hq::PedalEngineHQ pedal; pedal.prepare(sr,block);
-        guitardsp::hq::PedalParams pp; pp.drive=0.8f; pp.tone=0.55f; pp.levelDb=0.0f; pp.lowCutHz=55.0f;
-        pp.focusHz=900.0f; pp.midDb=0.0f; pp.cleanMix=0.0f; pp.octave=0.65f; pp.starve=0.55f; pp.gate=0.15f;
+        guitardsp::hq::PedalParams pp; pp.drive=0.8f; pp.tone=0.55f; pp.levelDb=0.0f; pp.lowCutHz=55.0f; pp.focusHz=900.0f; pp.midDb=0.0f; pp.cleanMix=0.0f; pp.octave=0.65f; pp.starve=0.55f; pp.gate=0.15f;
         pedal.setType((guitardsp::hq::PedalType)model); pedal.setParameters(pp);
-
         juce::AudioBuffer<float> silent(1,block); silent.clear(); pedal.process(silent);
-        const std::string silenceName=std::string(pedalNames[(size_t)model])+" zero-input silence";
-        ok&=require(sane(silent,0.01f)&&rms(silent)<1.0e-7f,silenceName.c_str());
-
-        pedal.reset(); pedal.setParameters(pp);
-        juce::AudioBuffer<float> tiny(1,block); fillSine(tiny,1.0e-5f,997.0f,sr);
-        const float tinyIn=acRms(tiny); pedal.process(tiny); const float gain=acRms(tiny)/(tinyIn+1.0e-12f);
-        const float gainDb=20.0f*std::log10(juce::jmax(gain,1.0e-12f));
+        const std::string silenceName=std::string(pedalNames[(size_t)model])+" zero-input silence"; ok&=require(sane(silent,0.01f)&&rms(silent)<1.0e-7f,silenceName.c_str());
+        pedal.reset(); pedal.setParameters(pp); juce::AudioBuffer<float> tiny(1,block); fillSine(tiny,1.0e-5f,997.0f,sr);
+        const float tinyIn=acRms(tiny); pedal.process(tiny); const float gain=acRms(tiny)/(tinyIn+1.0e-12f); const float gainDb=20.0f*std::log10(juce::jmax(gain,1.0e-12f));
         std::cout<<"INFO "<<pedalNames[(size_t)model]<<" low-level AC gain "<<gainDb<<" dB\n";
-        const std::string gainName=std::string(pedalNames[(size_t)model])+" low-level AC gain bounded";
-        ok&=require(sane(tiny,0.1f)&&gain<32.0f,gainName.c_str());
+        const std::string gainName=std::string(pedalNames[(size_t)model])+" low-level AC gain bounded"; ok&=require(sane(tiny,0.1f)&&gain<32.0f,gainName.c_str());
     }
+
+    // Precision gate: loud notes must pass, quiet input must be attenuated, silence stays silent.
+    guitardsp::hq::HQEffectsRack gateRack; gateRack.prepare(sr,block); gateRack.setDynamicsMode(guitardsp::hq::HQEffectsRack::DynamicsMode::gate);
+    auto& gc=gateRack.gateControl(); gc.thresholdDb.store(-48.0f); gc.rangeDb.store(-60.0f); gc.ratio.store(5.0f); gc.attackMs.store(0.8f); gc.holdMs.store(20.0f); gc.releaseMs.store(90.0f); gc.hysteresisDb.store(4.0f); gc.sidechainHpHz.store(55.0f); gc.sidechainLpHz.store(6500.0f);
+    juce::AudioBuffer<float> gateBuf(2,block); fillSine(gateBuf,0.12f,440.0f,sr); const float loudBefore=rms(gateBuf); for(int i=0;i<8;++i)gateRack.processPreAmp(gateBuf,0,block); const float loudAfter=rms(gateBuf); ok&=require(loudAfter>0.65f*loudBefore,"Precision gate passes playing level");
+    gateRack.reset(); fillSine(gateBuf,0.00008f,440.0f,sr); const float quietBefore=rms(gateBuf); for(int i=0;i<40;++i)gateRack.processPreAmp(gateBuf,0,block); const float quietAfter=rms(gateBuf); ok&=require(quietAfter<0.35f*quietBefore,"Precision gate attenuates noise floor");
+    gateRack.reset(); gateBuf.clear(); for(int i=0;i<8;++i)gateRack.processPreAmp(gateBuf,0,block); ok&=require(rms(gateBuf)<1.0e-10f,"Precision gate preserves digital silence");
 
     rack.setDynamicsMode(guitardsp::hq::HQEffectsRack::DynamicsMode::studioCompressor);fillSine(b,0.3f);rack.processPreAmp(b,0,block);ok&=require(sane(b),"Studio compressor finite");rack.setDynamicsMode(guitardsp::hq::HQEffectsRack::DynamicsMode::off);
     rack.modulationControl().rateHz.store(4.0f);rack.modulationControl().depth.store(0.7f);rack.modulationControl().mix.store(1.0f);
