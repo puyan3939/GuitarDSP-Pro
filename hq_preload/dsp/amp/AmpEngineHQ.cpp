@@ -31,27 +31,28 @@ static AmpHQParams defaults()
     p.stage[0]={18,19000,1,0,0,0,19000,1};
     p.stage[1]={35,15000,1,0,0,0,15000,1};
     p.stage[2]={70,12500,1,0,0,0,12500,1};
-    p.stage[3]={55,12500,2.4f,0.025f,0.30f,0.12f,8200,0.92f}; // V1A
+    p.stage[3]={55,12500,2.4f,0.025f,0.30f,0.12f,8200,0.92f};
     p.stage[4]={90,11500,1,0,0,0,11000,1};
-    p.stage[5]={75,10500,3.3f,0.040f,0.20f,0.18f,6800,0.72f}; // V1B
+    p.stage[5]={75,10500,3.3f,0.040f,0.20f,0.18f,6800,0.72f};
     p.stage[6]={120,9800,1,0,0,0,9500,1};
-    p.stage[7]={110,9000,4.0f,0.080f,0.75f,0.20f,5900,0.60f}; // cold clipper
+    p.stage[7]={110,9000,4.0f,0.080f,0.75f,0.20f,5900,0.60f};
     p.stage[8]={55,14500,1.18f,0.012f,0.12f,0.08f,11000,0.98f};
     p.stage[9]={45,16000,1,0,0,0,15000,1};
     p.stage[10]={30,18000,1,0,0,0,18000,1};
-    p.stage[11]={55,12000,1.55f,0.018f,0.22f,0.14f,9000,0.90f}; // recovery
+    p.stage[11]={55,12000,1.55f,0.018f,0.22f,0.14f,9000,0.90f};
     p.stage[12]={30,18000,1,0,0,0,18000,0.72f};
     p.stage[13]={70,12500,1,0,0,0,12000,1};
-    p.stage[14]={65,12000,1.55f,0.015f,0.35f,0.18f,9000,0.88f}; // PI
-    p.stage[15]={20,18000,1,0,0,0,18000,1}; // sag slot
+    p.stage[14]={65,12000,1.55f,0.015f,0.35f,0.18f,9000,0.88f};
+    p.stage[15]={20,18000,1,0,0,0,18000,1};
     p.stage[16]={85,11000,1,0,0,0,10500,1};
-    p.stage[17]={55,10500,2.15f,0.032f,0.28f,0.22f,6500,0.82f}; // power tube
-    p.stage[18]={20,18000,1,0,0,0,18000,1}; // NFB slot
-    p.stage[19]={35,9000,1.15f,0.005f,0.10f,0.04f,7000,0.92f}; // transformer
+    p.stage[17]={55,10500,2.15f,0.032f,0.28f,0.22f,6500,0.82f};
+    p.stage[18]={20,18000,1,0,0,0,18000,1};
+    p.stage[19]={35,9000,1.15f,0.005f,0.10f,0.04f,7000,0.92f};
     return p;
 }
 
 AmpEngineHQ::AmpEngineHQ():params(defaults()),oversampling(2){}
+AmpEngineHQ::~AmpEngineHQ() = default;
 
 void AmpEngineHQ::prepare(double sampleRate,int maxBlockSize)
 {
@@ -88,35 +89,23 @@ void AmpEngineHQ::updateFilters()
 
 float AmpEngineHQ::processChannel(Channel& c,float x)
 {
-    // Input, V1A and coupling network.
     for(int i=0;i<=9;++i)x=c.st[(size_t)i].process(x);
-
-    // Interactive tone-stack placeholder upgraded to cascaded minimum-phase bands.
     x=c.treble.process(c.mid.process(c.bass.process(x)));
     x=c.st[10].process(x);
-    x=c.st[11].process(x); // recovery
-    x=c.st[12].process(x); // master
-    x=c.st[13].process(x); // PI input
-    x=c.st[14].process(x); // PI
-
-    // Supply sag is driven by smoothed power demand and recovers dynamically.
+    x=c.st[11].process(x);
+    x=c.st[12].process(x);
+    x=c.st[13].process(x);
+    x=c.st[14].process(x);
     const float demand=c.sagEnv.process(std::abs(x));
     const float sagGain=juce::jlimit(0.42f,1.0f,1.0f-params.sag*0.50f*demand);
     x*=sagGain;
-
-    x=c.st[16].process(x); // power grid / presence feed
-
-    // Negative feedback closes around the power stage + transformer history.
+    x=c.st[16].process(x);
     const float nfb=juce::jlimit(0.0f,0.82f,params.damping*0.62f);
     const float presenceTilt=lerp(0.70f,1.18f,params.presence);
     x-=c.nfbHistory*nfb*presenceTilt;
-
-    // Bias excursion/blocking memory increases with sustained power-stage level.
     const float be=c.biasEnv.process(std::abs(x));
     auto pp=params.stage[17];pp.bias+=params.biasExcursion*0.10f*be;c.st[17].set(pp);
     x=c.st[17].process(x);
-
-    // Transformer saturation + bandwidth limiting.
     auto tp=params.stage[19];tp.drive*=1.0f+params.transformerSaturation*1.6f;c.st[19].set(tp);
     x=c.st[19].process(x);
     c.nfbHistory=x;
@@ -126,7 +115,6 @@ float AmpEngineHQ::processChannel(Channel& c,float x)
 void AmpEngineHQ::process(juce::AudioBuffer<float>& mono)
 {
     const int n=mono.getNumSamples();if(n<=0)return;work.setSize(1,n,false,false,true);work.copyFrom(0,0,mono,0,0,n);
-    // Amp nonlinear network is evaluated at 4x. This is intentionally expensive; ECO can later select 2x.
     oversampling.process(work,[this](float x){return processChannel(*channels[0],x);});mono.copyFrom(0,0,work,0,0,n);
 }
 }
