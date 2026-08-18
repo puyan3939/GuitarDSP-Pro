@@ -2,7 +2,7 @@
 
 MainView::MainView(AudioEngine& engine)
     : audioEngine(engine),
-      ampPage(engine.getSignalChain().getAmpEngine()),
+      ampPage(engine.getAmpEngine()),
       settingsPage(engine.getDeviceManager())
 {
     addAndMakeVisible(navigation);
@@ -27,8 +27,8 @@ MainView::MainView(AudioEngine& engine)
         slider.setTextValueSuffix(" dB");
     };
 
-    configureGainSlider(inputGainSlider, -24.0, 24.0, 0.0);
-    configureGainSlider(outputGainSlider, -60.0, 6.0, -6.0);
+    configureGainSlider(inputGainSlider, -36.0, 18.0, -6.0);
+    configureGainSlider(outputGainSlider, -60.0, 6.0, -18.0);
 
     inputLabel.setText("INPUT", juce::dontSendNotification);
     outputLabel.setText("OUTPUT", juce::dontSendNotification);
@@ -50,18 +50,21 @@ MainView::MainView(AudioEngine& engine)
 
     inputGainSlider.onValueChange = [this]
     {
-        audioEngine.getSignalChain().setInputGainDb((float) inputGainSlider.getValue());
+        audioEngine.setInputGainDb((float) inputGainSlider.getValue());
     };
 
     outputGainSlider.onValueChange = [this]
     {
-        audioEngine.getSignalChain().setOutputGainDb((float) outputGainSlider.getValue());
+        audioEngine.setOutputGainDb((float) outputGainSlider.getValue());
     };
 
     bypassButton.onClick = [this]
     {
-        audioEngine.getSignalChain().setBypassed(bypassButton.getToggleState());
+        audioEngine.setBypass(bypassButton.getToggleState());
     };
+
+    audioEngine.setInputGainDb((float) inputGainSlider.getValue());
+    audioEngine.setOutputGainDb((float) outputGainSlider.getValue());
 
     showPage(NavigationBar::Page::amp);
     startTimerHz(15);
@@ -128,15 +131,18 @@ void MainView::showPage(NavigationBar::Page page)
         visiblePage->setVisible(false);
 
     visiblePage = next;
-    visiblePage->setVisible(true);
-    visiblePage->toFront(false);
+    if (visiblePage != nullptr)
+    {
+        visiblePage->setVisible(true);
+        visiblePage->toFront(false);
+    }
     resized();
 }
 
 void MainView::timerCallback()
 {
-    inputMeterLabel.setText(juce::String(audioEngine.getSignalChain().getInputLevelDb(), 1) + " dB",
-                            juce::dontSendNotification);
-    outputMeterLabel.setText(juce::String(audioEngine.getSignalChain().getOutputLevelDb(), 1) + " dB",
-                             juce::dontSendNotification);
+    const float inDb = juce::jmax(audioEngine.getInputPeak(0), audioEngine.getInputPeak(1));
+    const float outDb = juce::jmax(audioEngine.getOutputPeak(0), audioEngine.getOutputPeak(1));
+    inputMeterLabel.setText(juce::String(inDb, 1) + " dB", juce::dontSendNotification);
+    outputMeterLabel.setText(juce::String(outDb, 1) + " dB", juce::dontSendNotification);
 }
