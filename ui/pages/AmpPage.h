@@ -9,6 +9,7 @@ public:
     explicit AmpPage(AmpEngine& engine);
     void paint(juce::Graphics&) override;
     void resized() override;
+    void refreshFromEngine() { loadSelectedStage(); }
 
 private:
     void loadSelectedStage();
