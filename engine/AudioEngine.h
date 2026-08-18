@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include <array>
+#include <atomic>
 #include "SignalChain.h"
 #include "../dsp/LevelMeter.h"
 
@@ -29,8 +30,15 @@ public:
     float getOutputRms(int channel) const noexcept;
 
 private:
-    static void measureBlock(const juce::AudioBuffer<float>& buffer, int startSample, int numSamples, std::array<LevelMeter, 2>& meters);
+    static void measureBlock(const juce::AudioBuffer<float>& buffer,
+                             int startSample,
+                             int numSamples,
+                             std::array<LevelMeter, 2>& peakMeters,
+                             std::array<std::atomic<float>, 2>& rmsDb);
+
     SignalChain signalChain;
     std::array<LevelMeter, 2> inputMeters;
     std::array<LevelMeter, 2> outputMeters;
+    std::array<std::atomic<float>, 2> inputRmsDb { std::atomic<float>{-100.0f}, std::atomic<float>{-100.0f} };
+    std::array<std::atomic<float>, 2> outputRmsDb { std::atomic<float>{-100.0f}, std::atomic<float>{-100.0f} };
 };
