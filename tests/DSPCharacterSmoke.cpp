@@ -20,6 +20,21 @@ int main(){
 
     guitardsp::hq::HQEffectsRack rack;rack.prepare(sr,block);
     for(int model=0;model<9;++model){rack.reset();auto&slot=rack.pedalSlot(0);slot.enabled.store(true);slot.model.store(model);slot.drive.store(0.8f);slot.mix.store(1.0f);fillSine(b);rack.processPreAmp(b,0,block);const std::string name="Pedal model "+std::to_string(model)+" finite";ok&=require(sane(b),name.c_str());slot.enabled.store(false);}
+
+    // Regression guard for the original pedal-noise problem: a tiny input must not be
+    // multiplied by an extreme single-stage pre-gain before clipping. Real fuzzes can
+    // have substantial small-signal gain, so the limit is deliberately generous (~30 dB).
+    for(int model=0;model<9;++model){
+        guitardsp::hq::PedalEngineHQ pedal; pedal.prepare(sr,block);
+        guitardsp::hq::PedalParams pp; pp.drive=0.8f; pp.tone=0.55f; pp.levelDb=0.0f; pp.lowCutHz=55.0f;
+        pp.focusHz=900.0f; pp.midDb=0.0f; pp.cleanMix=0.0f; pp.octave=0.65f; pp.starve=0.55f; pp.gate=0.15f;
+        pedal.setType((guitardsp::hq::PedalType)model); pedal.setParameters(pp);
+        juce::AudioBuffer<float> tiny(1,block); fillSine(tiny,1.0e-5f,997.0f,sr);
+        const float tinyIn=rms(tiny); pedal.process(tiny); const float gain=rms(tiny)/(tinyIn+1.0e-12f);
+        const std::string name="Pedal model "+std::to_string(model)+" low-level gain bounded";
+        ok&=require(sane(tiny,0.1f)&&gain<32.0f,name.c_str());
+    }
+
     rack.setDynamicsMode(guitardsp::hq::HQEffectsRack::DynamicsMode::studioCompressor);fillSine(b,0.3f);rack.processPreAmp(b,0,block);ok&=require(sane(b),"Studio compressor finite");rack.setDynamicsMode(guitardsp::hq::HQEffectsRack::DynamicsMode::off);
     rack.modulationControl().rateHz.store(4.0f);rack.modulationControl().depth.store(0.7f);rack.modulationControl().mix.store(1.0f);
     for(int mode=1;mode<=5;++mode){rack.reset();rack.setModulationMode((guitardsp::hq::HQEffectsRack::ModulationMode)mode);fillSine(b);const float before=rms(b);rack.processPostAmp(b,0,block);const std::string finiteName="Modulation mode "+std::to_string(mode)+" finite";const std::string activeName="Modulation mode "+std::to_string(mode)+" changes signal";ok&=require(sane(b),finiteName.c_str());ok&=require(std::abs(rms(b)-before)>1.0e-7f,activeName.c_str());}
