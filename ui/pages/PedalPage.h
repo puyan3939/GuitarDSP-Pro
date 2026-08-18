@@ -9,6 +9,7 @@ public:
     explicit PedalPage(guitardsp::hq::HQEffectsRack& rack);
     void paint(juce::Graphics&) override;
     void resized() override;
+    void refreshFromEngine();
 
 private:
     void loadSlot();
