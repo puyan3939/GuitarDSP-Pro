@@ -10,8 +10,9 @@ void SignalChain::prepare(double sampleRate, int maximumBlockSize)
     startupFade.setCurrentAndTargetValue(0.0f);
     startupFade.setTargetValue(1.0f);
 
-    ampEngine.prepare(sampleRate);
-    hqAmpEngine.prepare(sampleRate, maximumBlockSize, 2);
+    ampWorkBuffer.setSize(1, maximumBlockSize, false, false, true);
+    ampEngine.prepare(sampleRate, maximumBlockSize);
+    hqAmpEngine.prepare(sampleRate, maximumBlockSize);
     hqEffects.prepare(sampleRate, maximumBlockSize);
     limiter.prepare(sampleRate);
     limiter.setCeiling(0.28f);
@@ -24,6 +25,7 @@ void SignalChain::reset()
     hqAmpEngine.reset();
     hqEffects.reset();
     limiter.reset();
+    ampWorkBuffer.clear();
 }
 
 void SignalChain::process(juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
@@ -40,7 +42,7 @@ void SignalChain::process(juce::AudioBuffer<float>& buffer, int startSample, int
         applyInputGain(buffer, startSample, numSamples);
         hqEffects.processPreAmp(buffer, startSample, numSamples);
         if (getAmpMode() == AmpMode::hq)
-            hqAmpEngine.process(buffer, startSample, numSamples);
+            processHQAmp(buffer, startSample, numSamples);
         else
             processLegacyAmp(buffer, startSample, numSamples);
         hqEffects.processPostAmp(buffer, startSample, numSamples);
@@ -79,13 +81,24 @@ void SignalChain::applyInputGain(juce::AudioBuffer<float>& buffer, int startSamp
 
 void SignalChain::processLegacyAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
 {
+    ampWorkBuffer.setSize(1, numSamples, false, false, true);
+    ampWorkBuffer.copyFrom(0, 0, buffer, 0, startSample, numSamples);
+    ampEngine.process(ampWorkBuffer);
+
     const int channels = juce::jmin(2, buffer.getNumChannels());
     for (int ch = 0; ch < channels; ++ch)
-    {
-        auto* data = buffer.getWritePointer(ch, startSample);
-        for (int i = 0; i < numSamples; ++i)
-            data[i] = ampEngine.processSample(ch, data[i]);
-    }
+        buffer.copyFrom(ch, startSample, ampWorkBuffer, 0, 0, numSamples);
+}
+
+void SignalChain::processHQAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
+{
+    ampWorkBuffer.setSize(1, numSamples, false, false, true);
+    ampWorkBuffer.copyFrom(0, 0, buffer, 0, startSample, numSamples);
+    hqAmpEngine.process(ampWorkBuffer);
+
+    const int channels = juce::jmin(2, buffer.getNumChannels());
+    for (int ch = 0; ch < channels; ++ch)
+        buffer.copyFrom(ch, startSample, ampWorkBuffer, 0, 0, numSamples);
 }
 
 void SignalChain::applyStartupFadeAndLimiter(juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
