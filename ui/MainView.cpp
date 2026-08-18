@@ -5,6 +5,7 @@ MainView::MainView(AudioEngine& engine)
       ampPage(engine.getAmpEngine()),
       pedalPage(engine.getHQEffectsRack()),
       cabPage(engine.getCabMicEngine()),
+      effectsPage(engine.getHQEffectsRack()),
       settingsPage(engine.getDeviceManager())
 {
     addAndMakeVisible(navigation);
