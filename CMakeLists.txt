@@ -26,6 +26,10 @@ juce_add_gui_app(GuitarDSPPro
     PRODUCT_NAME "GuitarDSP-Pro"
 )
 
+# The source tree intentionally uses the traditional umbrella include
+# <JuceHeader.h>. With JUCE's CMake API this header is generated explicitly.
+juce_generate_juce_header(GuitarDSPPro)
+
 target_sources(GuitarDSPPro PRIVATE
     src/Main.cpp
     src/MainComponent.cpp
