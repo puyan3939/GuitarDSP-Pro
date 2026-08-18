@@ -83,6 +83,12 @@ private:
     std::array<ReverbHQ, stereoChannels> reverbFx;
     DelayControl delayControls;
     ReverbControl reverbControls;
+
+    // Realtime work buffers are allocated once in prepare(). Never allocate on the audio thread.
+    juce::AudioBuffer<float> pedalMonoWork;
+    juce::AudioBuffer<float> gateCleanKey;
+    int preparedMaxBlock = 0;
+
     std::atomic<int> dynamicsMode{(int)DynamicsMode::off};
     std::atomic<int> modulationMode{(int)ModulationMode::off};
     std::atomic<bool> delayEnabled{false};
