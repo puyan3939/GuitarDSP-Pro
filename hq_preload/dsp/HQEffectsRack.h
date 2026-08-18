@@ -19,8 +19,8 @@ public:
 
     struct PedalSlotControl {
         std::atomic<bool> enabled{false};
-        std::atomic<int> model{(int)PedalModel::midOverdrive};
-        std::atomic<float> drive{1.0f}, tone{0.5f}, levelDb{0.0f}, mix{1.0f};
+        std::atomic<int> model{(int)PedalType::midOD};
+        std::atomic<float> drive{0.5f}, tone{0.5f}, levelDb{0.0f}, mix{1.0f};
         std::atomic<float> aux1{0.5f}, aux2{0.5f}, aux3{0.5f};
     };
     struct GateControl { std::atomic<float> thresholdDb{-55}, rangeDb{-70}, attackMs{1}, holdMs{25}, releaseMs{120}, hysteresisDb{4}; };
