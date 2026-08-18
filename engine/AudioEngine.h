@@ -7,6 +7,9 @@
 class AudioEngine
 {
 public:
+    AudioEngine();
+    ~AudioEngine();
+
     void prepare(double sampleRate, int maximumBlockSize);
     void release();
     void process(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
