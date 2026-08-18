@@ -13,6 +13,7 @@ public:
 private:
     void loadSlot();
     void pushControls();
+    void pushGateControls();
     void updateModelLabels();
     void setupKnob(juce::Slider& slider, const juce::String& name,
                    double min, double max, double step);
@@ -25,6 +26,10 @@ private:
     juce::ComboBox slotSelector;
     juce::ComboBox modelSelector;
     juce::ToggleButton enabledButton { "ON" };
+
+    juce::ToggleButton gateEnabled { "PRECISION GATE" };
+    juce::Slider gateThreshold, gateRange, gateRatio, gateAttack, gateHold,
+                 gateRelease, gateHysteresis, gateSidechainHp, gateSidechainLp;
 
     juce::Slider drive;
     juce::Slider tone;
