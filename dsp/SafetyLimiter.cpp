@@ -15,19 +15,29 @@ void SafetyLimiter::reset()
     gain = 1.0f;
 }
 
+void SafetyLimiter::setCeiling(float linear) noexcept
+{
+    ceiling.store(std::clamp(linear, 0.01f, 0.999f), std::memory_order_relaxed);
+}
+
+void SafetyLimiter::setOutputGainDb(float gainDb) noexcept
+{
+    const auto clampedDb = std::clamp(gainDb, -60.0f, 12.0f);
+    outputGain.store(std::pow(10.0f, clampedDb / 20.0f), std::memory_order_relaxed);
+}
+
 float SafetyLimiter::processSample(float x) noexcept
 {
+    const float c = ceiling.load(std::memory_order_relaxed);
+    const float out = outputGain.load(std::memory_order_relaxed);
     const auto ax = std::abs(x);
     const auto coeff = ax > envelope ? attackCoeff : releaseCoeff;
     envelope = coeff * envelope + (1.0f - coeff) * ax;
 
-    constexpr float ceiling = 0.89f; // about -1 dBFS
-    const auto targetGain = envelope > ceiling ? ceiling / std::max(envelope, 1.0e-6f) : 1.0f;
-
+    const auto targetGain = envelope > c ? c / std::max(envelope, 1.0e-6f) : 1.0f;
     const auto gainCoeff = targetGain < gain ? attackCoeff : releaseCoeff;
     gain = gainCoeff * gain + (1.0f - gainCoeff) * targetGain;
 
-    // Final soft guard. This is deliberately conservative in Phase 0.
     const auto y = x * gain;
-    return std::tanh(y / ceiling) * ceiling;
+    return std::tanh(y / c) * c * out;
 }
