@@ -2,7 +2,6 @@ name: DSP Fast Check
 
 on:
   push:
-    branches-ignore: [ "main", "master" ]
   pull_request:
   workflow_dispatch:
 
@@ -13,38 +12,58 @@ jobs:
   dsp:
     name: HQ DSP compile + smoke
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 12
 
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout GuitarDSP-Pro
+        uses: actions/checkout@v5
 
       - name: Install minimal JUCE build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build git pkg-config \
+            build-essential cmake ninja-build git pkg-config ccache \
             libasound2-dev libjack-jackd2-dev \
             libfreetype6-dev libfreetype-dev libfontconfig1-dev \
             libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
             libxinerama-dev libxrandr-dev libxrender-dev libxi-dev \
             libglu1-mesa-dev mesa-common-dev libegl-dev
 
-      - uses: actions/checkout@v5
+      - name: Cache compiler objects
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: dsp-ccache-${{ runner.os }}-juce900-${{ hashFiles('CMakeLists.txt', 'hq_preload/**/*.h', 'hq_preload/**/*.cpp', 'tests/**/*.cpp') }}
+          restore-keys: |
+            dsp-ccache-${{ runner.os }}-juce900-
+
+      - name: Checkout JUCE 9.0.0
+        uses: actions/checkout@v5
         with:
           repository: juce-framework/JUCE
           ref: 9.0.0
           path: _deps/JUCE
           fetch-depth: 1
 
-      - name: Configure test target
+      - name: Configure DSP test target
+        env:
+          CC: gcc
+          CXX: g++
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DGUITARDSP_JUCE_PATH="${{ github.workspace }}/_deps/JUCE"
 
       - name: Build DSP tests only
-        run: cmake --build build --target GuitarDSPDSPTests --parallel 2
+        run: cmake --build build --target GuitarDSPDSPTests --parallel 4
 
-      - name: Run DSP tests
+      - name: Run DSP smoke tests
         run: ctest --test-dir build --output-on-failure -R hq_dsp_smoke
+
+      - name: Compiler cache stats
+        if: always()
+        run: ccache --show-stats || true
