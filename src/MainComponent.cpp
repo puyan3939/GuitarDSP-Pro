@@ -2,12 +2,16 @@
 
 MainComponent::MainComponent()
 {
+    audioEngine.initialise();
     setOpaque(true);
     setSize(1280, 720);
     addAndMakeVisible(mainView);
 }
 
-MainComponent::~MainComponent() = default;
+MainComponent::~MainComponent()
+{
+    audioEngine.shutdown();
+}
 
 void MainComponent::paint(juce::Graphics& g)
 {
