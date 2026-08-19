@@ -16,12 +16,13 @@ struct CabMicParams
     CabType cab = CabType::vintage4x12;
     MicType mic = MicType::dynamic57;
     CabIrEngine irEngine = CabIrEngine::classic;
-    float position = 0.42f;      // 0=edge, 1=cap
-    float distance = 0.18f;      // 0=close, 1=far
+    float position = 0.42f;
+    float distance = 0.18f;
     float resonance = 0.55f;
     float lowCutHz = 70.0f;
     float highCutHz = 9000.0f;
     float mix = 1.0f;
+    float lowVolumeFeel = 0.0f; // 0=neutral, 1=maximum body/density compensation
 };
 
 class CabMicEngineHQ
@@ -43,6 +44,7 @@ private:
     juce::AudioBuffer<float> makeImpulse() const;
     void rebuildImpulse();
     void updateFilters();
+    void updateFeelFilters();
 
     double fs = 48000.0;
     int maxBlock = 512;
@@ -50,6 +52,9 @@ private:
     std::array<std::unique_ptr<juce::dsp::Convolution>, 2> convolution;
     std::array<OnePoleHP, 2> lowCut;
     std::array<OnePoleLP, 2> highCut;
+    std::array<Biquad, 2> feelBody;
+    std::array<Biquad, 2> feelLowMid;
+    std::array<Biquad, 2> feelPresence;
     juce::AudioBuffer<float> work;
     juce::AudioBuffer<float> dryWork;
     std::atomic<bool> enabled { false };
