@@ -41,9 +41,10 @@ static AmpHQParams defaults()
     return p;
 }
 
-// 8x internal processing at 48 kHz = 384 kHz.  The expensive rate is reserved
-// for the nonlinear amp path where alias suppression materially affects tone.
-AmpEngineHQ::AmpEngineHQ():params(defaults()),oversampling(3){}
+// 16x internal processing at 48 kHz = 768 kHz. This is intentionally
+// aggressive for a quality A/B test; revert to 8x if the audible benefit
+// does not justify the realtime CPU cost.
+AmpEngineHQ::AmpEngineHQ():params(defaults()),oversampling(4){}
 AmpEngineHQ::~AmpEngineHQ() = default;
 
 void AmpEngineHQ::prepare(double sampleRate,int maxBlockSize)
