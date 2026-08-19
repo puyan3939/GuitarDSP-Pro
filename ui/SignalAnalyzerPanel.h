@@ -14,6 +14,19 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void setAnalyzerActive(bool active)
+    {
+        if (active)
+        {
+            startTimerHz(15);
+            updateData();
+            repaint();
+        }
+        else
+        {
+            stopTimer();
+        }
+    }
 
 private:
     void timerCallback() override;
@@ -38,27 +51,12 @@ private:
     static juce::String tapName(int id);
 
     AudioEngine& audioEngine;
-
-    juce::ComboBox modeSelector;
-    juce::ComboBox sourceASelector;
-    juce::ComboBox sourceBSelector;
-    juce::ComboBox viewSelector;
-    juce::ComboBox scaleSelector;
-    juce::ComboBox timeSelector;
-    juce::Slider frequencySlider;
-    juce::Slider levelSlider;
+    juce::ComboBox modeSelector, sourceASelector, sourceBSelector, viewSelector, scaleSelector, timeSelector;
+    juce::Slider frequencySlider, levelSlider;
     juce::ToggleButton holdButton { "HOLD" };
-
-    juce::Label titleLabel;
-    juce::Label frequencyLabel;
-    juce::Label levelLabel;
-    juce::Label sweepLabel;
-
-    std::vector<float> samplesA;
-    std::vector<float> samplesB;
-    juce::Rectangle<float> monitorABounds;
-    juce::Rectangle<float> monitorBBounds;
-
+    juce::Label titleLabel, frequencyLabel, levelLabel, sweepLabel;
+    std::vector<float> samplesA, samplesB;
+    juce::Rectangle<float> monitorABounds, monitorBBounds;
     mutable juce::dsp::FFT fft { 11 };
     mutable juce::dsp::WindowingFunction<float> fftWindow { 2048, juce::dsp::WindowingFunction<float>::hann };
 
