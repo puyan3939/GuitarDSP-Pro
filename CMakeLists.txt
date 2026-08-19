@@ -31,7 +31,7 @@ target_sources(GuitarDSPPro PRIVATE
     hq_preload/dsp/amp/AmpEngineHQ.cpp
     hq_preload/dsp/HQEffectsRack.cpp
     hq_preload/dsp/cab/CabMicEngineHQ.cpp
-    ui/MainView.cpp ui/NavigationBar.cpp
+    ui/MainView.cpp ui/NavigationBar.cpp ui/SignalAnalyzerPanel.cpp
     ui/pages/AmpPage.cpp ui/pages/PedalPage.cpp ui/pages/CabPage.cpp ui/pages/EffectsPage.cpp ui/pages/SettingsPage.cpp
 )
 
