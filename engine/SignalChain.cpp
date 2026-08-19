@@ -171,7 +171,8 @@ void SignalChain::copySettingsTo(SignalChain& destination)
     {
         auto& s = srcRack.studioCompControl(); auto& d = dstRack.studioCompControl();
         copyAtomic(s.thresholdDb,d.thresholdDb); copyAtomic(s.ratio,d.ratio); copyAtomic(s.attackMs,d.attackMs); copyAtomic(s.releaseMs,d.releaseMs);
-        copyAtomic(s.kneeDb,d.kneeDb); copyAtomic(s.makeupDb,d.makeupDb); copyAtomic(s.mix,d.mix); copyAtomic(s.rms,d.rms);
+        copyAtomic(s.kneeDb,d.kneeDb); copyAtomic(s.makeupDb,d.makeupDb); copyAtomic(s.mix,d.mix); copyAtomic(s.sidechainHpHz,d.sidechainHpHz);
+        copyAtomic(s.rms,d.rms); copyAtomic(s.autoRelease,d.autoRelease); copyAtomic(s.autoMakeup,d.autoMakeup);
     }
     {
         auto& s = srcRack.guitarCompControl(); auto& d = dstRack.guitarCompControl();
