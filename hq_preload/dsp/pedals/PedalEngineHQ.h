@@ -81,12 +81,12 @@ public:
     {
         const int n=mono.getNumSamples(); if(n<=0)return;
 
-        // Pitch shifting is not a clipping/nonlinear process. Running it through the
-        // pedal oversampler wastes CPU and does not solve aliasing the way it does for fuzz.
+        // HQ Octaver has its own dedicated 16x resampling path. The external rig
+        // remains at the device sample rate while the moving pitch read heads and
+        // cubic interpolation run at the higher internal rate.
         if(type==PedalType::hqOctaver)
         {
-            auto* d=mono.getWritePointer(0);
-            for(int i=0;i<n;++i)d[i]=pitchOctaver.process(d[i]);
+            pitchOctaver.processBlock(mono);
             mono.applyGain(dbToGain(params.levelDb));
             return;
         }
