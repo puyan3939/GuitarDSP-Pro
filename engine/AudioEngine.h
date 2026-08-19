@@ -25,6 +25,7 @@ public:
     void setOutputGainDb(float gainDb) noexcept;
     void setBypass(bool enabled) noexcept;
     void setMonoInputToStereo(bool enabled) noexcept;
+    void setLiveAnalyzerEnabled(bool enabled) noexcept;
 
     AmpEngine& getAmpEngine() noexcept { return signalChain.getAmpEngine(); }
     guitardsp::hq::AmpEngineHQ& getHQAmpEngine() noexcept { return signalChain.getHQAmpEngine(); }
