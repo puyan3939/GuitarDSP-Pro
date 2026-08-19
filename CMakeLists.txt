@@ -46,6 +46,10 @@ target_include_directories(GuitarDSPDSPTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_compile_definitions(GuitarDSPDSPTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(GuitarDSPDSPTests PRIVATE juce::juce_dsp juce::juce_audio_basics)
 
+# PR validation: the fast test target also compiles the GUI app so analyzer/UI changes
+# cannot pass CI without a full C++ compile. This dependency is build-only; tests stay unchanged.
+add_dependencies(GuitarDSPDSPTests GuitarDSPPro)
+
 include(CTest)
 if (BUILD_TESTING)
     add_test(NAME hq_dsp_smoke COMMAND GuitarDSPDSPTests)
