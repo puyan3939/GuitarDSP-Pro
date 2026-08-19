@@ -3,8 +3,9 @@
 namespace guitardsp::hq {
 
 void HQEffectsRack::prepare(double sampleRate, int maximumBlockSize) {
-    cleanKeyBuffer.setSize(stereoChannels, maximumBlockSize, false, false, true);
-    monoWorkBuffer.setSize(1, maximumBlockSize, false, false, true);
+    preparedMaxBlock = maximumBlockSize;
+    gateCleanKey.setSize(stereoChannels, maximumBlockSize, false, false, true);
+    pedalMonoWork.setSize(1, maximumBlockSize, false, false, true);
     for (int ch = 0; ch < stereoChannels; ++ch) {
         for (auto& pedal : pedals[(size_t)ch]) pedal.prepare(sampleRate, maximumBlockSize);
         noiseGate[(size_t)ch].prepare(sampleRate);
@@ -71,10 +72,11 @@ void HQEffectsRack::processPreAmp(juce::AudioBuffer<float>& buffer, int startSam
     updateDynamicParameters();
     const auto mode = getDynamicsMode();
     const int channels = juce::jmin(stereoChannels, buffer.getNumChannels());
+    jassert(numSamples <= preparedMaxBlock);
 
     if (mode == DynamicsMode::gate) {
         for (int ch=0; ch<channels; ++ch)
-            cleanKeyBuffer.copyFrom(ch,0,buffer,ch,startSample,numSamples);
+            gateCleanKey.copyFrom(ch,0,buffer,ch,startSample,numSamples);
     }
 
     if (mode == DynamicsMode::studioCompressor || mode == DynamicsMode::guitarCompressor)
@@ -104,16 +106,16 @@ void HQEffectsRack::processPreAmp(juce::AudioBuffer<float>& buffer, int startSam
             auto& pedal = pedals[(size_t)ch][(size_t)slot];
             pedal.setType(type);
             pedal.setParameters(p);
-            monoWorkBuffer.copyFrom(0, 0, buffer, ch, startSample, numSamples);
-            pedal.process(monoWorkBuffer);
-            buffer.copyFrom(ch, startSample, monoWorkBuffer, 0, 0, numSamples);
+            pedalMonoWork.copyFrom(0, 0, buffer, ch, startSample, numSamples);
+            pedal.process(pedalMonoWork);
+            buffer.copyFrom(ch, startSample, pedalMonoWork, 0, 0, numSamples);
         }
     }
 
     if (mode == DynamicsMode::gate) {
         for (int ch=0; ch<channels; ++ch) {
             auto* audio=buffer.getWritePointer(ch,startSample);
-            const auto* key=cleanKeyBuffer.getReadPointer(ch);
+            const auto* key=gateCleanKey.getReadPointer(ch);
             for (int i=0;i<numSamples;++i)
                 audio[i]=noiseGate[(size_t)ch].processKeyed(audio[i],key[i]);
         }
