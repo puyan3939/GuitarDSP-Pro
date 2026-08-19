@@ -2,10 +2,11 @@
 #include <JuceHeader.h>
 #include <memory>
 #include "../common/HQDSP.h"
+#include "PitchOctaverHQ.h"
 
 namespace guitardsp::hq
 {
-enum class PedalType { cleanBoost, trebleBoost, midOD, transparentOD, hardDistortion, germaniumFuzz, siliconFuzz, octaveFuzz, velcroFuzz };
+enum class PedalType { cleanBoost, trebleBoost, midOD, transparentOD, hardDistortion, germaniumFuzz, siliconFuzz, octaveFuzz, velcroFuzz, hqOctaver };
 
 struct PedalParams
 {
@@ -22,6 +23,7 @@ public:
     void prepare(double fs,int maxBlock)
     {
         sampleRate=fs; maxSamples=maxBlock; oversampling.prepare(fs,maxBlock); work.setSize(1,maxBlock);
+        pitchOctaver.prepare(fs,maxBlock);
         const double internalFs=oversampling.getInternalSampleRate();
 
         inputHP.prepare(internalFs); inputLP.prepare(internalFs);
@@ -41,6 +43,7 @@ public:
     void reset()
     {
         oversampling.reset();
+        pitchOctaver.reset();
         inputHP.reset(); inputLP.reset(); couplingHP1.reset(); couplingHP2.reset();
         stageLP1.reset(); stageLP2.reset(); outputLP.reset(); postDc.reset(); midPeak.reset();
         biasMemory.reset(); supplyEnv.reset(); octaveDc.reset(); gateEnv.reset();
@@ -57,11 +60,37 @@ public:
         updateFilters();
     }
 
-    void setParameters(const PedalParams&p){params=p;updateFilters();}
+    void setParameters(const PedalParams&p)
+    {
+        params=p;
+        updateFilters();
+        if(type==PedalType::hqOctaver)
+        {
+            PitchOctaverHQ::Params q;
+            q.octaveUp=juce::jlimit(0.0f,1.0f,params.drive);
+            q.octaveDown=juce::jlimit(0.0f,1.0f,params.tone);
+            q.dry=juce::jlimit(0.0f,1.0f,params.cleanMix);
+            q.tracking=juce::jlimit(0.0f,1.0f,(params.lowCutHz-40.0f)/260.0f);
+            q.tone=juce::jlimit(0.0f,1.0f,(params.focusHz-300.0f)/2200.0f);
+            q.smooth=juce::jlimit(0.0f,1.0f,(params.midDb+12.0f)/24.0f);
+            pitchOctaver.setParameters(q);
+        }
+    }
 
     void process(juce::AudioBuffer<float>& mono)
     {
         const int n=mono.getNumSamples(); if(n<=0)return;
+
+        // Pitch shifting is not a clipping/nonlinear process. Running it through the
+        // pedal oversampler wastes CPU and does not solve aliasing the way it does for fuzz.
+        if(type==PedalType::hqOctaver)
+        {
+            auto* d=mono.getWritePointer(0);
+            for(int i=0;i<n;++i)d[i]=pitchOctaver.process(d[i]);
+            mono.applyGain(dbToGain(params.levelDb));
+            return;
+        }
+
         work.setSize(1,n,false,false,true); work.copyFrom(0,0,mono,0,0,n);
         oversampling.process(work,[this](float x){return nonlinear(x);});
         mono.copyFrom(0,0,work,0,0,n);
@@ -98,9 +127,6 @@ private:
         const bool highGain = type==PedalType::hardDistortion || type==PedalType::germaniumFuzz ||
                               type==PedalType::siliconFuzz || type==PedalType::octaveFuzz ||
                               type==PedalType::velcroFuzz;
-        // Real transistor/diode pedals do not present infinite bandwidth at the first gain node.
-        // Limiting bandwidth before large nonlinear gain prevents ultrasonic/ADC hiss from being
-        // promoted into audible intermodulation while retaining guitar harmonics.
         inputLP.setHz(highGain ? lerp(6500.0f,12500.0f,tone)
                                : lerp(10000.0f,18000.0f,tone));
         postDc.setHz(18.0f);
@@ -242,6 +268,7 @@ private:
             case PedalType::siliconFuzz:       return siliconFuzz(x,d);
             case PedalType::octaveFuzz:        return octaveFuzz(x,d);
             case PedalType::velcroFuzz:        return velcroFuzz(x,d);
+            case PedalType::hqOctaver:         return x;
         }
         return x;
     }
@@ -252,6 +279,7 @@ private:
     int maxSamples=512;
 
     NonlinearOversampler oversampling;
+    PitchOctaverHQ pitchOctaver;
     juce::AudioBuffer<float> work;
 
     OnePoleHP inputHP,couplingHP1,couplingHP2,postDc;
