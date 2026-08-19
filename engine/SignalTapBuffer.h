@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <vector>
 
 class SignalTapBuffer
@@ -62,7 +63,7 @@ public:
 
         for (int i = 0; i < numSamples; ++i)
         {
-            target[(size_t)(write & (capacity - 1))].store(source[i], std::memory_order_relaxed);
+            target[(size_t)(write & static_cast<std::uint64_t>(capacity - 1))].store(source[i], std::memory_order_relaxed);
             ++write;
         }
 
@@ -82,16 +83,19 @@ public:
         destination.resize((size_t)count);
 
         const auto end = writeIndices[(size_t)tap].load(std::memory_order_acquire);
-        const auto start = end - count;
+        const auto start = end - static_cast<std::uint64_t>(count);
         const auto& source = buffers[(size_t)tap];
 
         for (int i = 0; i < count; ++i)
-            destination[(size_t)i] = source[(size_t)((start + i) & (capacity - 1))].load(std::memory_order_relaxed);
+        {
+            const auto absolute = start + static_cast<std::uint64_t>(i);
+            destination[(size_t)(i)] = source[(size_t)(absolute & static_cast<std::uint64_t>(capacity - 1))].load(std::memory_order_relaxed);
+        }
     }
 
 private:
     static_assert((capacity & (capacity - 1)) == 0, "capacity must be a power of two");
     using TapStorage = std::array<std::atomic<float>, capacity>;
     std::array<TapStorage, tapCount> buffers {};
-    std::array<std::atomic<int>, tapCount> writeIndices {};
+    std::array<std::atomic<std::uint64_t>, tapCount> writeIndices {};
 };
