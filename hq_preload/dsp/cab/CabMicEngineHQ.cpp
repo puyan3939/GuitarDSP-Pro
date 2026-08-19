@@ -22,6 +22,7 @@ void CabMicEngineHQ::prepare(double sampleRate, int maximumBlockSize)
         highCut[(size_t)ch].prepare(fs);
     }
     updateFilters();
+    updateFeelFilters();
     rebuildImpulse();
     reset();
 }
@@ -33,6 +34,9 @@ void CabMicEngineHQ::reset()
         convolution[(size_t)ch]->reset();
         lowCut[(size_t)ch].reset();
         highCut[(size_t)ch].reset();
+        feelBody[(size_t)ch].reset();
+        feelLowMid[(size_t)ch].reset();
+        feelPresence[(size_t)ch].reset();
     }
     work.clear();
     dryWork.clear();
@@ -40,13 +44,19 @@ void CabMicEngineHQ::reset()
 
 void CabMicEngineHQ::setParameters(const CabMicParams& p)
 {
+    const bool irChanged = p.irEngine != params.irEngine || p.cab != params.cab || p.mic != params.mic
+                        || std::abs(p.position - params.position) > 1.0e-5f
+                        || std::abs(p.distance - params.distance) > 1.0e-5f
+                        || std::abs(p.resonance - params.resonance) > 1.0e-5f;
     params = p;
     params.position = juce::jlimit(0.0f, 1.0f, params.position);
     params.distance = juce::jlimit(0.0f, 1.0f, params.distance);
     params.resonance = juce::jlimit(0.0f, 1.0f, params.resonance);
     params.mix = juce::jlimit(0.0f, 1.0f, params.mix);
+    params.lowVolumeFeel = juce::jlimit(0.0f, 1.0f, params.lowVolumeFeel);
     updateFilters();
-    if (convolution[0]) rebuildImpulse();
+    updateFeelFilters();
+    if (convolution[0] && irChanged) rebuildImpulse();
 }
 
 void CabMicEngineHQ::updateFilters()
@@ -55,6 +65,17 @@ void CabMicEngineHQ::updateFilters()
     {
         lowCut[(size_t)ch].setHz(juce::jlimit(25.0f, 350.0f, params.lowCutHz));
         highCut[(size_t)ch].setHz(juce::jlimit(2500.0f, 18000.0f, params.highCutHz));
+    }
+}
+
+void CabMicEngineHQ::updateFeelFilters()
+{
+    const float a = juce::jlimit(0.0f, 1.0f, params.lowVolumeFeel);
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        feelBody[(size_t)ch].setPeak(fs, 115.0f, 0.72f, 3.2f * a);
+        feelLowMid[(size_t)ch].setPeak(fs, 330.0f, 0.78f, 2.0f * a);
+        feelPresence[(size_t)ch].setPeak(fs, 3200.0f, 0.72f, 1.15f * a);
     }
 }
 
@@ -108,8 +129,6 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeClassicImpulse() const
 
 juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
 {
-    // Synthetic IR with measurement-like time/phase structure: direct sound,
-    // cabinet/cone resonances, baffle diffraction and deterministic early reflections.
     const int length = juce::jlimit(2048, 16384, (int)std::round(fs * 0.120));
     juce::AudioBuffer<float> ir(1, length);
     ir.clear();
@@ -166,8 +185,6 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
     if (directDelay < length)
         d[directDelay] += directGain;
 
-    // Main modal response. Position changes both spectral weight and phase rather than
-    // acting as a simple brightness control.
     for (int n=directDelay; n<length; ++n)
     {
         const float t=(float)(n-directDelay)/(float)fs;
@@ -188,8 +205,6 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
         d[n] += y * env * 0.050f * resonance;
     }
 
-    // Baffle / cone-breakup structures. These short, damped packets create the fine
-    // peaks/notches and non-minimum-phase behaviour missing from the Classic engine.
     const std::array<float, 4> breakupFreq { 1850.0f, 2780.0f, 4120.0f, 5750.0f };
     const std::array<float, 4> breakupMs   { 0.16f, 0.31f, 0.53f, 0.81f };
     for (size_t b=0;b<breakupFreq.size();++b)
@@ -206,8 +221,6 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
         }
     }
 
-    // Deterministic early reflections. Distance increases their level and spacing;
-    // cabinet type changes their strength. Alternating polarity gives realistic combing.
     const std::array<float, 7> reflectionMs { 0.37f, 0.71f, 1.14f, 1.83f, 2.74f, 4.05f, 6.20f };
     const std::array<float, 7> reflectionAmp{ .20f, -.14f, .115f, -.085f, .061f, -.043f, .029f };
     for(size_t r=0;r<reflectionMs.size();++r)
@@ -219,7 +232,6 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
         const float amp=reflectionAmp[r]*profile.reflectionScale*farBoost*micBody;
         d[idx]+=amp;
 
-        // Give each reflection a tiny resonant tail instead of an isolated impulse.
         const float ringHz=profile.modes[(r+2)%profile.modes.size()];
         const int ring=(int)std::round(0.0030f*fs);
         for(int i=1;i<ring && idx+i<length;++i)
@@ -230,8 +242,6 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
         }
     }
 
-    // A very small deterministic diffuse tail prevents the IR from looking too periodic
-    // without introducing runtime randomness or unstable preset recall.
     uint32_t state = 0x51f2a37bu + (uint32_t)params.cab*7919u + (uint32_t)params.mic*1543u;
     const int tailStart=directDelay+(int)std::round((0.0035f+0.0060f*distance)*fs);
     for(int n=juce::jmax(0,tailStart);n<length;++n)
@@ -270,6 +280,7 @@ void CabMicEngineHQ::process(juce::AudioBuffer<float>& buffer, int startSample, 
     jassert(numSamples <= work.getNumSamples());
     if (numSamples > work.getNumSamples()) return;
 
+    const float feel = juce::jlimit(0.0f, 1.0f, params.lowVolumeFeel);
     for (int ch = 0; ch < channels; ++ch)
     {
         work.copyFrom(0, 0, buffer, ch, startSample, numSamples);
@@ -282,8 +293,19 @@ void CabMicEngineHQ::process(juce::AudioBuffer<float>& buffer, int startSample, 
         const auto* dryData = dryWork.getReadPointer(0);
         for (int i = 0; i < numSamples; ++i)
         {
-            const float y = highCut[(size_t)ch].process(lowCut[(size_t)ch].process(wet[i]));
-            wet[i] = lerp(dryData[i], y, params.mix);
+            const float cabSignal = highCut[(size_t)ch].process(lowCut[(size_t)ch].process(wet[i]));
+            float y = lerp(dryData[i], cabSignal, params.mix);
+            if (feel > 0.0001f)
+            {
+                const float shaped = feelPresence[(size_t)ch].process(
+                                     feelLowMid[(size_t)ch].process(
+                                     feelBody[(size_t)ch].process(y)));
+                const float drive = 1.0f + 1.15f * feel;
+                const float saturated = std::tanh(shaped * drive) / std::tanh(drive);
+                const float densityMix = 0.10f + 0.24f * feel;
+                y = lerp(shaped, saturated, densityMix) * dbToGain(0.8f * feel);
+            }
+            wet[i] = y;
         }
         buffer.copyFrom(ch, startSample, work, 0, 0, numSamples);
     }
