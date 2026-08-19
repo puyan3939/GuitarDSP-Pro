@@ -41,7 +41,9 @@ static AmpHQParams defaults()
     return p;
 }
 
-AmpEngineHQ::AmpEngineHQ():params(defaults()),oversampling(2){}
+// 8x internal processing at 48 kHz = 384 kHz.  The expensive rate is reserved
+// for the nonlinear amp path where alias suppression materially affects tone.
+AmpEngineHQ::AmpEngineHQ():params(defaults()),oversampling(3){}
 AmpEngineHQ::~AmpEngineHQ() = default;
 
 void AmpEngineHQ::prepare(double sampleRate,int maxBlockSize)
@@ -89,24 +91,20 @@ void AmpEngineHQ::updateFilters()
 
 float AmpEngineHQ::processChannel(Channel& c,float x)
 {
-    // Preamp + tone/recovery section.
     for(int i=0;i<=9;++i)x=c.st[(size_t)i].process(x);
     x=c.treble.process(c.mid.process(c.bass.process(x)));
     x=c.st[10].process(x);x=c.st[11].process(x);x=c.st[12].process(x);x=c.st[13].process(x);
 
-    // Long-tail-pair-like PI: two unequal halves, finite memory and asymmetric headroom.
     const float piIn=c.st[14].process(x);
     c.piMemory=0.9965f*c.piMemory+0.0035f*piIn;
     const float piPos=asymSat((piIn+0.055f*c.piMemory)*1.30f,0.010f,0.28f);
     const float piNeg=asymSat((-piIn+0.035f*c.piMemory)*1.18f,-0.014f,0.22f);
     x=0.52f*(piPos-piNeg);
 
-    // Supply sag follows power demand rather than acting as another static drive stage.
     const float demand=c.sagEnv.process(x*x);
     const float sagDepth=juce::jlimit(0.0f,0.70f,params.sag*0.62f*demand);
     const float supply=1.0f-sagDepth;
 
-    // Frequency-shaped negative feedback/presence around the power section.
     const float lowFeedback=c.nfbLow.process(c.nfbHistory);
     const float highFeedback=c.nfbHistory-lowFeedback;
     const float presenceAmount=juce::jlimit(0.0f,1.0f,params.presence);
@@ -114,7 +112,6 @@ float AmpEngineHQ::processChannel(Channel& c,float x)
     const float nfb=juce::jlimit(0.0f,0.82f,params.damping*0.68f);
     x-=feedbackSignal*nfb;
 
-    // Grid drive and bias excursion before the output pair.
     x=c.st[16].process(x);
     const float biasDemand=c.biasEnv.process(std::abs(x));
     const float excursion=params.biasExcursion*0.16f*biasDemand;
@@ -122,7 +119,6 @@ float AmpEngineHQ::processChannel(Channel& c,float x)
     const float pwrNeg=asymSat((-x-excursion)*params.stage[17].drive/(supply*0.97f),-params.stage[17].bias,0.30f);
     x=0.5f*(pwrPos-pwrNeg)*supply*params.stage[17].output;
 
-    // Transformer flux memory/hysteresis approximation and bandwidth stage.
     const float flux=c.transformerFlux.process(x);
     const float sat=juce::jlimit(0.0f,1.0f,params.transformerSaturation);
     const float magnetic=std::tanh(x*(1.0f+1.9f*sat)+flux*(0.08f+0.22f*sat));
