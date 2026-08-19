@@ -18,7 +18,7 @@ struct PedalParams
 class PedalEngineHQ
 {
 public:
-    PedalEngineHQ(): oversampling(3) {} // 8x for nonlinear pedal topologies
+    PedalEngineHQ(): oversampling(4) {} // 16x for nonlinear pedal topologies (48 kHz -> 768 kHz internal)
 
     void prepare(double fs,int maxBlock)
     {
