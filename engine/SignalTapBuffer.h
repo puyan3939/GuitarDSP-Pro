@@ -27,6 +27,16 @@ public:
         clear();
     }
 
+    void setEnabled(bool shouldEnable) noexcept
+    {
+        enabled.store(shouldEnable, std::memory_order_release);
+    }
+
+    bool isEnabled() const noexcept
+    {
+        return enabled.load(std::memory_order_acquire);
+    }
+
     void clear() noexcept
     {
         for (auto& tap : buffers)
@@ -41,7 +51,7 @@ public:
                    int startSample,
                    int numSamples) noexcept
     {
-        if (numSamples <= 0 || buffer.getNumChannels() <= 0)
+        if (!enabled.load(std::memory_order_relaxed) || numSamples <= 0 || buffer.getNumChannels() <= 0)
             return;
 
         const int tap = static_cast<int>(point);
@@ -89,7 +99,7 @@ public:
         for (int i = 0; i < count; ++i)
         {
             const auto absolute = start + static_cast<std::uint64_t>(i);
-            destination[(size_t)(i)] = source[(size_t)(absolute & static_cast<std::uint64_t>(capacity - 1))].load(std::memory_order_relaxed);
+            destination[(size_t)i] = source[(size_t)(absolute & static_cast<std::uint64_t>(capacity - 1))].load(std::memory_order_relaxed);
         }
     }
 
@@ -98,4 +108,5 @@ private:
     using TapStorage = std::array<std::atomic<float>, capacity>;
     std::array<TapStorage, tapCount> buffers {};
     std::array<std::atomic<std::uint64_t>, tapCount> writeIndices {};
+    std::atomic<bool> enabled { true };
 };
