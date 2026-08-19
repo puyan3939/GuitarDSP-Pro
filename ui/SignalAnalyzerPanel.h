@@ -16,9 +16,6 @@ public:
     void resized() override;
 
 private:
-    enum class ViewMode { osc, fft };
-    enum class SourceMode { live, sine, sweep };
-
     void timerCallback() override;
     void updateData();
     void refreshControlVisibility();
@@ -62,8 +59,8 @@ private:
     juce::Rectangle<float> monitorABounds;
     juce::Rectangle<float> monitorBBounds;
 
-    juce::dsp::FFT fft { 11 };
-    juce::dsp::WindowingFunction<float> fftWindow { 2048, juce::dsp::WindowingFunction<float>::hann };
+    mutable juce::dsp::FFT fft { 11 };
+    mutable juce::dsp::WindowingFunction<float> fftWindow { 2048, juce::dsp::WindowingFunction<float>::hann };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SignalAnalyzerPanel)
 };
