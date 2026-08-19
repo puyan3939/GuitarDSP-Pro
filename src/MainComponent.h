@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "../engine/AudioEngine.h"
 #include "../ui/MainView.h"
+#include "../ui/SignalAnalyzerPanel.h"
 
 class MainComponent : public juce::Component
 {
@@ -17,6 +18,8 @@ public:
 private:
     AudioEngine audioEngine;
     MainView mainView { audioEngine };
+    SignalAnalyzerPanel analyzerPanel { audioEngine };
+    juce::TextButton analyzerButton { "ANALYZER" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
