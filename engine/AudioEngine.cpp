@@ -28,9 +28,6 @@ void AudioEngine::initialise()
         const bool supports48k = sampleRates.contains(48000.0);
         const bool supports256 = bufferSizes.contains(256);
 
-        // Do not force a device reopen unless the requested format is actually
-        // advertised by the active driver. Some ALSA devices can fail to restart
-        // when an unsupported format is requested or another client owns the device.
         if (supports48k)
             requestedSetup.sampleRate = 48000.0;
         if (supports256)
@@ -66,7 +63,23 @@ void AudioEngine::shutdown()
 
 void AudioEngine::prepare(double sampleRate, int maximumBlockSize)
 {
+    currentSampleRate.store(sampleRate, std::memory_order_relaxed);
+
+    liveAnalyzerTaps.clear();
+    signalChain.setAnalyzerTaps(&liveAnalyzerTaps);
     signalChain.prepare(sampleRate, maximumBlockSize);
+
+    {
+        const juce::ScopedLock lock(analyzerLock);
+        analyzerPrepared.store(false, std::memory_order_relaxed);
+        testAnalyzerTaps.clear();
+        analyzerSignalChain.setAnalysisMode(true);
+        analyzerSignalChain.setAnalyzerTaps(&testAnalyzerTaps);
+        analyzerSignalChain.prepare(sampleRate, analyzerRenderSamples);
+        analyzerBuffer.setSize(2, analyzerRenderSamples, false, false, true);
+        analyzerPrepared.store(true, std::memory_order_release);
+    }
+
     ioBuffer.setSize(2, maximumBlockSize, false, false, true);
     for (auto& meter : inputMeters) meter.reset();
     for (auto& meter : outputMeters) meter.reset();
@@ -77,7 +90,17 @@ void AudioEngine::prepare(double sampleRate, int maximumBlockSize)
 void AudioEngine::release()
 {
     signalChain.reset();
+    liveAnalyzerTaps.clear();
     ioBuffer.setSize(2, 0);
+
+    {
+        const juce::ScopedLock lock(analyzerLock);
+        analyzerPrepared.store(false, std::memory_order_relaxed);
+        analyzerSignalChain.reset();
+        testAnalyzerTaps.clear();
+        analyzerBuffer.setSize(2, 0);
+    }
+
     for (auto& meter : inputMeters) meter.reset();
     for (auto& meter : outputMeters) meter.reset();
     for (auto& value : inputRmsDb) value.store(-100.0f, std::memory_order_relaxed);
@@ -92,6 +115,67 @@ void AudioEngine::process(juce::AudioBuffer<float>& buffer, int startSample, int
     measureBlock(buffer, startSample, numSamples, inputMeters, inputRmsDb);
     signalChain.process(buffer, startSample, numSamples);
     measureBlock(buffer, startSample, numSamples, outputMeters, outputRmsDb);
+}
+
+void AudioEngine::copyLiveAnalyzerTap(SignalTapBuffer::TapPoint point,
+                                      std::vector<float>& destination,
+                                      int samples) const
+{
+    liveAnalyzerTaps.copyLatest(point, destination, samples);
+}
+
+void AudioEngine::copyTestAnalyzerTap(SignalTapBuffer::TapPoint point,
+                                      std::vector<float>& destination,
+                                      int samples) const
+{
+    testAnalyzerTaps.copyLatest(point, destination, samples);
+}
+
+void AudioEngine::renderAnalyzerTest(AnalyzerTestMode mode,
+                                     float frequencyHz,
+                                     float levelDb,
+                                     float sweepStartHz,
+                                     float sweepEndHz)
+{
+    if (!analyzerPrepared.load(std::memory_order_acquire))
+        return;
+
+    const juce::ScopedLock lock(analyzerLock);
+    if (!analyzerPrepared.load(std::memory_order_relaxed) || analyzerBuffer.getNumSamples() < analyzerRenderSamples)
+        return;
+
+    signalChain.copySettingsTo(analyzerSignalChain);
+    analyzerSignalChain.reset();
+    testAnalyzerTaps.clear();
+    analyzerBuffer.clear();
+
+    const double fs = juce::jmax(8000.0, currentSampleRate.load(std::memory_order_relaxed));
+    const float gain = juce::Decibels::decibelsToGain(juce::jlimit(-80.0f, 0.0f, levelDb));
+    const float nyquistSafe = static_cast<float>(fs * 0.45);
+    frequencyHz = juce::jlimit(1.0f, nyquistSafe, frequencyHz);
+    sweepStartHz = juce::jlimit(1.0f, nyquistSafe, sweepStartHz);
+    sweepEndHz = juce::jlimit(sweepStartHz, nyquistSafe, sweepEndHz);
+
+    double phase = 0.0;
+    for (int i = 0; i < analyzerRenderSamples; ++i)
+    {
+        float frequency = frequencyHz;
+        if (mode == AnalyzerTestMode::sweep)
+        {
+            const double t = static_cast<double>(i) / static_cast<double>(analyzerRenderSamples - 1);
+            frequency = static_cast<float>(sweepStartHz * std::pow(sweepEndHz / sweepStartHz, t));
+        }
+
+        phase += juce::MathConstants<double>::twoPi * static_cast<double>(frequency) / fs;
+        if (phase > juce::MathConstants<double>::twoPi)
+            phase -= juce::MathConstants<double>::twoPi;
+
+        const float sample = gain * static_cast<float>(std::sin(phase));
+        analyzerBuffer.setSample(0, i, sample);
+        analyzerBuffer.setSample(1, i, sample);
+    }
+
+    analyzerSignalChain.process(analyzerBuffer, 0, analyzerRenderSamples);
 }
 
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
