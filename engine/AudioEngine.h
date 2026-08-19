@@ -2,12 +2,16 @@
 #include <JuceHeader.h>
 #include <array>
 #include <atomic>
+#include <vector>
 #include "SignalChain.h"
+#include "SignalTapBuffer.h"
 #include "../dsp/LevelMeter.h"
 
 class AudioEngine : private juce::AudioIODeviceCallback
 {
 public:
+    enum class AnalyzerTestMode { sine, sweep };
+
     AudioEngine();
     ~AudioEngine() override;
 
@@ -36,15 +40,35 @@ public:
     float getOutputPeak(int channel) const noexcept;
     float getOutputRms(int channel) const noexcept;
 
+    double getCurrentSampleRate() const noexcept { return currentSampleRate.load(std::memory_order_relaxed); }
+    void copyLiveAnalyzerTap(SignalTapBuffer::TapPoint point, std::vector<float>& destination, int samples) const;
+    void copyTestAnalyzerTap(SignalTapBuffer::TapPoint point, std::vector<float>& destination, int samples) const;
+    void renderAnalyzerTest(AnalyzerTestMode mode,
+                            float frequencyHz,
+                            float levelDb,
+                            float sweepStartHz = 20.0f,
+                            float sweepEndHz = 20000.0f);
+
 private:
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
     void audioDeviceStopped() override;
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,int numInputChannels,float* const* outputChannelData,int numOutputChannels,int numSamples,const juce::AudioIODeviceCallbackContext&) override;
     static void measureBlock(const juce::AudioBuffer<float>& buffer,int startSample,int numSamples,std::array<LevelMeter, 2>& peakMeters,std::array<std::atomic<float>, 2>& rmsDb);
 
+    static constexpr int analyzerRenderSamples = 4096;
+
     juce::AudioDeviceManager deviceManager;
     juce::AudioBuffer<float> ioBuffer;
     SignalChain signalChain;
+    SignalTapBuffer liveAnalyzerTaps;
+
+    SignalChain analyzerSignalChain;
+    SignalTapBuffer testAnalyzerTaps;
+    juce::AudioBuffer<float> analyzerBuffer;
+    juce::CriticalSection analyzerLock;
+    std::atomic<double> currentSampleRate { 48000.0 };
+    std::atomic<bool> analyzerPrepared { false };
+
     std::array<LevelMeter, 2> inputMeters;
     std::array<LevelMeter, 2> outputMeters;
     std::array<std::atomic<float>, 2> inputRmsDb { std::atomic<float>{-100.0f}, std::atomic<float>{-100.0f} };
