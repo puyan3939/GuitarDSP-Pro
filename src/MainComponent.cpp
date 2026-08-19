@@ -8,6 +8,8 @@ MainComponent::MainComponent()
     addAndMakeVisible(mainView);
     addAndMakeVisible(analyzerButton);
     addChildComponent(analyzerPanel);
+    analyzerPanel.setAnalyzerActive(false);
+    audioEngine.setLiveAnalyzerEnabled(false);
 
     analyzerButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(26, 31, 38));
     analyzerButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(222, 110, 58));
@@ -16,6 +18,8 @@ MainComponent::MainComponent()
     {
         const bool shouldShow = !analyzerPanel.isVisible();
         analyzerPanel.setVisible(shouldShow);
+        analyzerPanel.setAnalyzerActive(shouldShow);
+        audioEngine.setLiveAnalyzerEnabled(shouldShow);
         analyzerButton.setButtonText(shouldShow ? "CLOSE ANALYZER" : "ANALYZER");
         analyzerPanel.toFront(false);
         analyzerButton.toFront(false);
