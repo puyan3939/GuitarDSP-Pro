@@ -21,10 +21,10 @@ int main(){
     ok&=require(sane(b),"HQ amp finite/bounded");ok&=require(rms(b)>1.0e-6f&&std::abs(rms(b)-inRms)>1.0e-5f,"HQ amp changes signal");
 
     guitardsp::hq::HQEffectsRack rack;rack.prepare(sr,block);
-    for(int model=0;model<9;++model){rack.reset();auto&slot=rack.pedalSlot(0);slot.enabled.store(true);slot.model.store(model);slot.drive.store(0.8f);slot.mix.store(1.0f);fillSine(b);rack.processPreAmp(b,0,block);const std::string name="Pedal model "+std::to_string(model)+" finite";ok&=require(sane(b),name.c_str());slot.enabled.store(false);}
+    for(int model=0;model<10;++model){rack.reset();auto&slot=rack.pedalSlot(0);slot.enabled.store(true);slot.model.store(model);slot.drive.store(0.8f);slot.mix.store(1.0f);fillSine(b);rack.processPreAmp(b,0,block);const std::string name="Pedal model "+std::to_string(model)+" finite";ok&=require(sane(b),name.c_str());slot.enabled.store(false);}
 
-    static constexpr std::array<const char*,9> pedalNames{"Clean Boost","Treble Boost","Mid OD","Transparent OD","Hard Distortion","Germanium Fuzz","Silicon Fuzz","Octave Fuzz","Velcro Fuzz"};
-    for(int model=0;model<9;++model){
+    static constexpr std::array<const char*,10> pedalNames{"Clean Boost","Treble Boost","Mid OD","Transparent OD","Hard Distortion","Germanium Fuzz","Silicon Fuzz","Octave Fuzz","Velcro Fuzz","HQ Octaver"};
+    for(int model=0;model<10;++model){
         guitardsp::hq::PedalEngineHQ pedal; pedal.prepare(sr,block);
         guitardsp::hq::PedalParams pp; pp.drive=0.8f; pp.tone=0.55f; pp.levelDb=0.0f; pp.lowCutHz=55.0f; pp.focusHz=900.0f; pp.midDb=0.0f; pp.cleanMix=0.0f; pp.octave=0.65f; pp.starve=0.55f; pp.gate=0.15f;
         pedal.setType((guitardsp::hq::PedalType)model); pedal.setParameters(pp);
