@@ -21,6 +21,7 @@ public:
         lowCut.setValue(p.lowCutHz,juce::dontSendNotification);
         highCut.setValue(p.highCutHz,juce::dontSendNotification);
         mix.setValue(p.mix,juce::dontSendNotification);
+        lowVolumeFeel.setValue(p.lowVolumeFeel,juce::dontSendNotification);
     }
 
 private:
@@ -30,5 +31,5 @@ private:
     juce::Label title, info;
     juce::ToggleButton enabled { "CAB / MIC ON" };
     juce::ComboBox irEngine, cabType, micType;
-    juce::Slider position, distance, resonance, lowCut, highCut, mix;
+    juce::Slider position, distance, resonance, lowCut, highCut, mix, lowVolumeFeel;
 };
