@@ -6,9 +6,13 @@
 
 namespace guitardsp::hq
 {
-// Fixed-octave, dual-head granular pitch shifter.  This is intentionally separate
+// Fixed-octave, dual-head granular pitch shifter. This is intentionally separate
 // from the nonlinear Octave Fuzz: it preserves the input waveform and creates
 // clean +/-1 octave voices with overlapping Hann windows and cubic interpolation.
+//
+// The external rig can remain at 48 kHz while this pitch core runs at 16x
+// (768 kHz at a 48 kHz device rate). This improves moving-read-head interpolation
+// and pushes resampling images far above the final audio Nyquist frequency.
 class PitchOctaverHQ
 {
 public:
@@ -22,14 +26,22 @@ public:
         float smooth = 0.55f;
     };
 
+    PitchOctaverHQ() : oversampling(4) {} // 16x internal pitch rate
+
     void prepare(double sampleRate, int maximumBlockSize)
     {
-        fs = sampleRate;
-        const int wanted = juce::jmax(8192, (int)std::ceil(fs * 0.18) + maximumBlockSize + 16);
+        externalFs = sampleRate;
+        oversampling.prepare(sampleRate, maximumBlockSize);
+        fs = oversampling.getInternalSampleRate();
+
+        // Keep the delay memory duration constant in seconds at the 16x rate.
+        const int wanted = juce::jmax(8192,
+            (int)std::ceil(fs * 0.18) + maximumBlockSize * oversampling.getFactor() + 32);
         int size = 1;
         while (size < wanted) size <<= 1;
         buffer.assign((size_t)size, 0.0f);
         mask = size - 1;
+
         toneLP.prepare(fs);
         dcBlock.prepare(fs);
         reset();
@@ -38,6 +50,7 @@ public:
 
     void reset() noexcept
     {
+        oversampling.reset();
         std::fill(buffer.begin(), buffer.end(), 0.0f);
         writeIndex = 0;
         upPhase = 0.0f;
@@ -58,12 +71,22 @@ public:
         updateTone();
     }
 
-    float process(float input) noexcept
+    void processBlock(juce::AudioBuffer<float>& mono)
     {
-        if (buffer.empty()) return input;
+        if (mono.getNumSamples() <= 0 || buffer.empty()) return;
+        oversampling.process(mono, [this](float x) noexcept { return processInternal(x); });
+    }
+
+    int getInternalFactor() const noexcept { return oversampling.getFactor(); }
+    double getInternalSampleRate() const noexcept { return fs; }
+
+private:
+    float processInternal(float input) noexcept
+    {
         buffer[(size_t)(writeIndex & mask)] = input;
 
-        // Short windows track riffs tightly; longer windows reduce modulation texture.
+        // Window duration is defined in milliseconds, so increasing the internal
+        // sample rate improves time resolution without changing playing feel.
         const float windowMs = lerp(18.0f, 56.0f, params.tracking);
         const float windowSamples = juce::jlimit(96.0f, (float)buffer.size() * 0.32f,
                                                  0.001f * windowMs * (float)fs);
@@ -76,15 +99,14 @@ public:
         const float normaliser = 1.0f / juce::jmax(1.0f, params.dry + params.octaveUp + params.octaveDown);
         float y = (params.dry * input + shifted) * normaliser;
 
-        // Gentle output conditioning removes interpolation images without making the
-        // octave voice dull.  SMOOTH blends between raw and filtered pitch voices.
+        // This filter also runs at the 16x rate; the oversampler's downsampling
+        // filters provide the final anti-imaging/anti-alias protection at 48 kHz.
         const float filtered = toneLP.process(y);
         y = lerp(y, filtered, 0.25f + 0.70f * params.smooth);
         ++writeIndex;
         return dcBlock.process(y);
     }
 
-private:
     static float wrap01(float p) noexcept
     {
         p -= std::floor(p);
@@ -142,7 +164,9 @@ private:
     }
 
     Params params;
-    double fs = 48000.0;
+    double externalFs = 48000.0;
+    double fs = 768000.0;
+    NonlinearOversampler oversampling;
     std::vector<float> buffer;
     int mask = 0;
     int writeIndex = 0;
