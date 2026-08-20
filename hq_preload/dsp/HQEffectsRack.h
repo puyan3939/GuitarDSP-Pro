@@ -10,6 +10,7 @@
 #include "modulation/ModulationHQ.h"
 #include "delay/DelayHQ.h"
 #include "reverb/ReverbHQ.h"
+#include "routing/ParallelRigHQ.h"
 
 namespace guitardsp::hq {
 
@@ -49,6 +50,8 @@ public:
     ModulationControl& modulationControl() noexcept { return modControls; }
     DelayControl& delayControl() noexcept { return delayControls; }
     ReverbControl& reverbControl() noexcept { return reverbControls; }
+    ParallelRigControl& parallelRigControl() noexcept { return parallelControls; }
+    const ParallelRigControl& parallelRigControl() const noexcept { return parallelControls; }
 
     void setDynamicsMode(DynamicsMode m) noexcept { dynamicsMode.store((int)m, std::memory_order_relaxed); }
     DynamicsMode getDynamicsMode() const noexcept { return (DynamicsMode)dynamicsMode.load(std::memory_order_relaxed); }
@@ -83,6 +86,7 @@ private:
     std::array<ReverbHQ, stereoChannels> reverbFx;
     DelayControl delayControls;
     ReverbControl reverbControls;
+    ParallelRigControl parallelControls;
 
     // Realtime work buffers are allocated once in prepare(). Never allocate on the audio thread.
     juce::AudioBuffer<float> pedalMonoWork;
