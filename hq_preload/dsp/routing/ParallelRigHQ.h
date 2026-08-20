@@ -44,11 +44,21 @@ public:
         octave.reset();cleanHp.reset();cleanLp.reset();cleanDc.reset();cleanBass.reset();cleanMid.reset();cleanTreble.reset();cleanPresence.reset();cleanSag.reset();
         subHp.reset();subLp.reset();subDc.reset();subBass.reset();subMid.reset();subTreble.reset();subBody.reset();subSag.reset();mainDelay.reset();cleanDelay.reset();subDelay.reset();cleanWork.clear();subWork.clear();
     }
+
+    // Compatibility overload: both parallel buses are sourced from the same dry tap.
     void process(const juce::AudioBuffer<float>& dryInput,juce::AudioBuffer<float>& processedMain,int startSample,int numSamples,const ParallelRigControl& c)
     {
-        if(!c.enabled.load(std::memory_order_relaxed)||numSamples<=0)return;jassert(numSamples<=maxBlock);if(dryInput.getNumChannels()<=0||processedMain.getNumChannels()<=0)return;updateFilters(c);
-        cleanWork.copyFrom(0,0,dryInput,0,0,numSamples);subWork.copyFrom(0,0,dryInput,0,0,numSamples);
-        if(c.cleanEnabled.load())processCleanAmp(cleanWork,numSamples,c);else cleanWork.clear();if(c.subEnabled.load())processBassAmp(subWork,numSamples,c);else subWork.clear();
+        processBuses(dryInput,dryInput,processedMain,startSample,numSamples,c);
+    }
+
+    // CLEAN and SUB can now arrive with different routed pedals already applied.
+    void processBuses(const juce::AudioBuffer<float>& cleanInput,const juce::AudioBuffer<float>& subInput,juce::AudioBuffer<float>& processedMain,int startSample,int numSamples,const ParallelRigControl& c)
+    {
+        if(!c.enabled.load(std::memory_order_relaxed)||numSamples<=0)return;jassert(numSamples<=maxBlock);
+        if(cleanInput.getNumChannels()<=0||subInput.getNumChannels()<=0||processedMain.getNumChannels()<=0)return;updateFilters(c);
+        cleanWork.copyFrom(0,0,cleanInput,0,0,numSamples);subWork.copyFrom(0,0,subInput,0,0,numSamples);
+        if(c.cleanEnabled.load())processCleanAmp(cleanWork,numSamples,c);else cleanWork.clear();
+        if(c.subEnabled.load())processBassAmp(subWork,numSamples,c);else subWork.clear();
         const float mainGain=dbToGain(juce::jlimit(-60.0f,12.0f,c.mainLevelDb.load())),cleanGain=dbToGain(juce::jlimit(-60.0f,12.0f,c.cleanLevelDb.load())),subGain=dbToGain(juce::jlimit(-60.0f,12.0f,c.subLevelDb.load()));
         const float cleanPolarity=c.cleanInvert.load()?-1.0f:1.0f,subPolarity=c.subInvert.load()?-1.0f:1.0f;
         float mainMs=c.mainDelayMs.load(),cleanMs=c.cleanDelayMs.load(),subMs=c.subDelayMs.load();
@@ -61,6 +71,7 @@ public:
         for(int i=0;i<numSamples;++i)mainOut[i]=mainGain*mainDelay.process(mainOut[i])+cleanGain*cleanPolarity*cleanDelay.process(clean[i])+subGain*subPolarity*subDelay.process(sub[i]);
         const int channels=juce::jmin(2,processedMain.getNumChannels());for(int ch=1;ch<channels;++ch)processedMain.copyFrom(ch,startSample,processedMain,0,startSample,numSamples);
     }
+
     void copySubStemTo(juce::AudioBuffer<float>& dest,int channel,int startSample,int numSamples,float levelDb=0.0f)const
     {
         if(channel<0||channel>=dest.getNumChannels()||numSamples<=0)return;const float g=dbToGain(levelDb);const auto*s=subWork.getReadPointer(0);auto*d=dest.getWritePointer(channel,startSample);for(int i=0;i<numSamples;++i)d[i]=s[i]*g;
