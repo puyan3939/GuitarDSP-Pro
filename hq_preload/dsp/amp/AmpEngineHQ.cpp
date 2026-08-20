@@ -129,11 +129,12 @@ AmpHQParams AmpEngineHQ::makeJVM410HOD1Reference(float bass, float middle, float
         s.memory = juce::jlimit(0.0f, 1.0f, s.memory * memoryScale);
     }
 
-    // Gain calibration v0 is deliberately isolated here so the ToneTwisT
-    // multi-gain fitter can update two constants without disturbing the G5
-    // calibration above. At Gain=5 the delta is exactly 0 dB.
-    constexpr float gainSpanDb = 24.0f;
-    constexpr float gainCurve = 1.25f;
+    // Gain-axis calibration v1. ToneTwisT's measured B/M/T=5 PreampOut sweep
+    // (Gain 0/4/5/8/10 fit, Gain 2/6 held out) selected this 37.949 dB span
+    // and 0.8 taper exponent. Gain=5 remains exactly neutral so the existing
+    // speaker-out/full-amp G5 calibration above stays the absolute anchor.
+    constexpr float gainSpanDb = 37.948997f;
+    constexpr float gainCurve = 0.800000f;
     const float gainPosition = std::pow(gain, gainCurve);
     const float gainFivePosition = std::pow(0.5f, gainCurve);
     const float gainDeltaDb = gainSpanDb * (gainPosition - gainFivePosition);
