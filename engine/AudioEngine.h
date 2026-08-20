@@ -26,8 +26,15 @@ public:
     guitardsp::hq::AmpEngineHQ& getHQAmpEngine() noexcept { return signalChain.getHQAmpEngine(); }
     guitardsp::hq::HQEffectsRack& getHQEffectsRack() noexcept { return signalChain.getHQEffectsRack(); }
     guitardsp::hq::CabMicEngineHQ& getCabMicEngine() noexcept { return signalChain.getCabMicEngine(); }
+    guitardsp::hq::InputLoadingControl& getInputLoadingControl() noexcept { return signalChain.getInputLoadingControl(); }
+    guitardsp::hq::ExpressionPitchControl& getExpressionPitchControl() noexcept { return signalChain.getExpressionPitchControl(); }
+    guitardsp::hq::DualDelayControl& getDualDelayControl() noexcept { return signalChain.getDualDelayControl(); }
+    guitardsp::hq::SceneSwitcherHQ& getSceneSwitcher() noexcept { return signalChain.getSceneSwitcher(); }
+
     void setAmpMode(SignalChain::AmpMode mode) noexcept { signalChain.setAmpMode(mode); }
     SignalChain::AmpMode getAmpMode() const noexcept { return signalChain.getAmpMode(); }
+    void setOutputMode(SignalChain::OutputMode mode) noexcept { signalChain.setOutputMode(mode); }
+    SignalChain::OutputMode getOutputMode() const noexcept { return signalChain.getOutputMode(); }
 
     juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager; }
 
