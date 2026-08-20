@@ -19,6 +19,7 @@ PedalPage::PedalPage(HQEffectsRack& rack) : effectsRack(rack)
     const char* models[] = {"Clean Boost","Treble Boost","Mid Overdrive","Transparent OD","Hard Distortion","Germanium Fuzz","Silicon Fuzz","Octave Fuzz","Velcro Fuzz","HQ Octaver"};
     for (int i=0;i<10;++i) modelSelector.addItem(models[i],i+1);
     addAndMakeVisible(modelSelector); addAndMakeVisible(enabledButton);
+    for(auto* b:{&routeMain,&routeClean,&routeSub}) addAndMakeVisible(*b);
 
     setupKnob(drive,"DRIVE",0.0,1.0,0.001); setupKnob(tone,"TONE",0.0,1.0,0.001);
     setupKnob(level,"LEVEL",-24.0,18.0,0.1); level.setTextValueSuffix(" dB");
@@ -43,10 +44,10 @@ PedalPage::PedalPage(HQEffectsRack& rack) : effectsRack(rack)
     gateEnabled.setToggleState(effectsRack.getDynamicsMode()==HQEffectsRack::DynamicsMode::gate,juce::dontSendNotification);
 
     slotSelector.onChange=[this]{loadSlot();}; modelSelector.onChange=[this]{updateModelLabels();pushControls();}; enabledButton.onClick=[this]{pushControls();};
+    routeMain.onClick=[this]{pushControls();}; routeClean.onClick=[this]{pushControls();}; routeSub.onClick=[this]{pushControls();};
     for(auto* s:{&drive,&tone,&level,&blend,&aux1,&aux2,&aux3}) s->onValueChange=[this]{pushControls();};
     gateEnabled.onClick=[this]{effectsRack.setDynamicsMode(gateEnabled.getToggleState()?HQEffectsRack::DynamicsMode::gate:HQEffectsRack::DynamicsMode::off);};
     for(auto* s:{&gateThreshold,&gateRange,&gateRatio,&gateAttack,&gateHold,&gateRelease,&gateHysteresis,&gateSidechainHp,&gateSidechainLp}) s->onValueChange=[this]{pushGateControls();};
-
     loadSlot();
 }
 
@@ -59,6 +60,7 @@ void PedalPage::loadSlot()
 {
     const int index=juce::jlimit(0,HQEffectsRack::pedalSlots-1,slotSelector.getSelectedId()-1); auto& c=effectsRack.pedalSlot(index); updating=true;
     enabledButton.setToggleState(c.enabled.load(),juce::dontSendNotification); modelSelector.setSelectedId(juce::jlimit(0,9,c.model.load())+1,juce::dontSendNotification);
+    const int mask=c.routeMask.load();routeMain.setToggleState((mask&HQEffectsRack::routeMain)!=0,juce::dontSendNotification);routeClean.setToggleState((mask&HQEffectsRack::routeClean)!=0,juce::dontSendNotification);routeSub.setToggleState((mask&HQEffectsRack::routeSub)!=0,juce::dontSendNotification);
     drive.setValue(c.drive.load(),juce::dontSendNotification); tone.setValue(c.tone.load(),juce::dontSendNotification); level.setValue(c.levelDb.load(),juce::dontSendNotification); blend.setValue(c.mix.load(),juce::dontSendNotification);
     aux1.setValue(c.aux1.load(),juce::dontSendNotification); aux2.setValue(c.aux2.load(),juce::dontSendNotification); aux3.setValue(c.aux3.load(),juce::dontSendNotification); updating=false; updateModelLabels();
 }
@@ -66,7 +68,8 @@ void PedalPage::loadSlot()
 void PedalPage::pushControls()
 {
     if(updating)return; const int index=juce::jlimit(0,HQEffectsRack::pedalSlots-1,slotSelector.getSelectedId()-1); auto& c=effectsRack.pedalSlot(index);
-    c.enabled.store(enabledButton.getToggleState()); c.model.store(juce::jlimit(0,9,modelSelector.getSelectedId()-1)); c.drive.store((float)drive.getValue()); c.tone.store((float)tone.getValue()); c.levelDb.store((float)level.getValue()); c.mix.store((float)blend.getValue()); c.aux1.store((float)aux1.getValue()); c.aux2.store((float)aux2.getValue()); c.aux3.store((float)aux3.getValue());
+    int mask=0;if(routeMain.getToggleState())mask|=HQEffectsRack::routeMain;if(routeClean.getToggleState())mask|=HQEffectsRack::routeClean;if(routeSub.getToggleState())mask|=HQEffectsRack::routeSub;
+    c.routeMask.store(mask);c.enabled.store(enabledButton.getToggleState()); c.model.store(juce::jlimit(0,9,modelSelector.getSelectedId()-1)); c.drive.store((float)drive.getValue()); c.tone.store((float)tone.getValue()); c.levelDb.store((float)level.getValue()); c.mix.store((float)blend.getValue()); c.aux1.store((float)aux1.getValue()); c.aux2.store((float)aux2.getValue()); c.aux3.store((float)aux3.getValue());
 }
 
 void PedalPage::pushGateControls()
@@ -79,10 +82,7 @@ void PedalPage::pushGateControls()
 
 void PedalPage::updateModelLabels()
 {
-    const int m=juce::jlimit(0,9,modelSelector.getSelectedId()-1);
-    blend.setEnabled(m==3 || m==9);
-    drive.setName("DRIVE"); tone.setName("TONE"); level.setName("LEVEL");
-    blend.setName(m==3?"CLEAN BLEND":m==9?"DRY":"BLEND (N/A)");
+    const int m=juce::jlimit(0,9,modelSelector.getSelectedId()-1);blend.setEnabled(m==3 || m==9);drive.setName("DRIVE"); tone.setName("TONE"); level.setName("LEVEL");blend.setName(m==3?"CLEAN BLEND":m==9?"DRY":"BLEND (N/A)");
     switch((PedalType)m)
     {
         case PedalType::cleanBoost: aux1.setName("LOW CUT"); aux2.setName("FOCUS"); aux3.setName("MID SHAPE"); description.setText("Clean boost: headroom/push with bandwidth shaping before the amp.",juce::dontSendNotification); break;
@@ -94,9 +94,7 @@ void PedalPage::updateModelLabels()
         case PedalType::siliconFuzz: aux1.setName("LOW CUT"); aux2.setName("FOCUS"); aux3.setName("MID SHAPE"); description.setText("Silicon fuzz: tighter, higher-gain fuzz with stronger harmonic density.",juce::dontSendNotification); break;
         case PedalType::octaveFuzz: aux1.setName("OCTAVE"); aux2.setName("BODY"); aux3.setName("TRIM"); description.setText("Octave fuzz: full-wave rectification creates the upper-octave component before re-clipping.",juce::dontSendNotification); break;
         case PedalType::velcroFuzz: aux1.setName("STABILITY"); aux2.setName("STARVE"); aux3.setName("GATE"); description.setText("Feedback fuzz: STABILITY controls bounded positive feedback/ring, STARVE collapses supply, GATE sets note cut-off.",juce::dontSendNotification); break;
-        case PedalType::hqOctaver:
-            drive.setName("OCT +1"); tone.setName("OCT -1"); aux1.setName("TRACK"); aux2.setName("PITCH TONE"); aux3.setName("SMOOTH");
-            description.setText("HQ Octaver: clean Whammy/POG-style fixed octaves using dual-head windowed pitch shifting. DRIVE=+1 octave, TONE=-1 octave, DRY blends the original.",juce::dontSendNotification); break;
+        case PedalType::hqOctaver: drive.setName("OCT +1"); tone.setName("OCT -1"); aux1.setName("TRACK"); aux2.setName("PITCH TONE"); aux3.setName("SMOOTH"); description.setText("HQ Octaver: fixed octave voices. Route it independently to MAIN/CLEAN/SUB from this page.",juce::dontSendNotification); break;
     }
     repaint();
 }
@@ -105,22 +103,13 @@ void PedalPage::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colour::fromRGB(12,16,21)); g.setColour(juce::Colour::fromRGB(28,34,42)); g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(10.0f),12.0f);
     g.setColour(juce::Colour::fromRGB(222,110,58)); g.setFont(13.0f); g.drawText("PRECISION INPUT GATE",getLocalBounds().reduced(28).withTrimmedTop(130).withHeight(18),juce::Justification::centredLeft);
-    g.setColour(juce::Colour::fromRGB(150,158,168)); g.setFont(11.0f);
-    const juce::Slider* gateSliders[]={&gateThreshold,&gateRange,&gateRatio,&gateAttack,&gateHold,&gateRelease,&gateHysteresis,&gateSidechainHp,&gateSidechainLp};
-    const juce::Slider* pedalSliders[]={&drive,&tone,&level,&blend,&aux1,&aux2,&aux3};
-    for(auto* s:gateSliders) g.drawText(s->getName(),s->getBounds().withHeight(16).translated(0,-13),juce::Justification::centred);
-    for(auto* s:pedalSliders) g.drawText(s->getName(),s->getBounds().withHeight(18).translated(0,-15),juce::Justification::centred);
+    g.setColour(juce::Colour::fromRGB(150,158,168)); g.setFont(11.0f);const juce::Slider* gateSliders[]={&gateThreshold,&gateRange,&gateRatio,&gateAttack,&gateHold,&gateRelease,&gateHysteresis,&gateSidechainHp,&gateSidechainLp};const juce::Slider* pedalSliders[]={&drive,&tone,&level,&blend,&aux1,&aux2,&aux3};for(auto* s:gateSliders) g.drawText(s->getName(),s->getBounds().withHeight(16).translated(0,-13),juce::Justification::centred);for(auto* s:pedalSliders) g.drawText(s->getName(),s->getBounds().withHeight(18).translated(0,-15),juce::Justification::centred);
 }
 
 void PedalPage::resized()
 {
     auto r=getLocalBounds().reduced(24); title.setBounds(r.removeFromTop(42));
-    auto top=r.removeFromTop(44); slotSelector.setBounds(top.removeFromLeft(140).reduced(4)); modelSelector.setBounds(top.removeFromLeft(230).reduced(4)); enabledButton.setBounds(top.removeFromLeft(90).reduced(8)); description.setBounds(r.removeFromTop(42));
-
-    auto gateHeader=r.removeFromTop(28); gateEnabled.setBounds(gateHeader.removeFromLeft(150).reduced(4));
-    auto gateRow=r.removeFromTop(130); const int gw=juce::jmax(82,gateRow.getWidth()/9);
-    for(auto* s:{&gateThreshold,&gateRange,&gateRatio,&gateAttack,&gateHold,&gateRelease,&gateHysteresis,&gateSidechainHp,&gateSidechainLp}) s->setBounds(gateRow.removeFromLeft(gw).reduced(3,10));
-
-    r.removeFromTop(10); auto knobs=r.removeFromTop(195); const int w=juce::jmax(100,knobs.getWidth()/7);
-    for(auto* s:{&drive,&tone,&level,&blend,&aux1,&aux2,&aux3}) s->setBounds(knobs.removeFromLeft(w).reduced(5,12));
+    auto top=r.removeFromTop(44); slotSelector.setBounds(top.removeFromLeft(130).reduced(4)); modelSelector.setBounds(top.removeFromLeft(210).reduced(4)); enabledButton.setBounds(top.removeFromLeft(70).reduced(6));routeMain.setBounds(top.removeFromLeft(80).reduced(3));routeClean.setBounds(top.removeFromLeft(85).reduced(3));routeSub.setBounds(top.removeFromLeft(70).reduced(3)); description.setBounds(r.removeFromTop(42));
+    auto gateHeader=r.removeFromTop(28); gateEnabled.setBounds(gateHeader.removeFromLeft(150).reduced(4));auto gateRow=r.removeFromTop(130); const int gw=juce::jmax(82,gateRow.getWidth()/9);for(auto* s:{&gateThreshold,&gateRange,&gateRatio,&gateAttack,&gateHold,&gateRelease,&gateHysteresis,&gateSidechainHp,&gateSidechainLp}) s->setBounds(gateRow.removeFromLeft(gw).reduced(3,10));
+    r.removeFromTop(10); auto knobs=r.removeFromTop(195); const int w=juce::jmax(100,knobs.getWidth()/7);for(auto* s:{&drive,&tone,&level,&blend,&aux1,&aux2,&aux3}) s->setBounds(knobs.removeFromLeft(w).reduced(5,12));
 }
