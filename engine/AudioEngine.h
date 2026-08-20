@@ -4,6 +4,7 @@
 #include <atomic>
 #include "SignalChain.h"
 #include "../dsp/LevelMeter.h"
+#include "../dsp/analyzer/AnalyzerTap.h"
 
 class AudioEngine : private juce::AudioIODeviceCallback
 {
@@ -35,6 +36,7 @@ public:
     float getInputRms(int channel) const noexcept;
     float getOutputPeak(int channel) const noexcept;
     float getOutputRms(int channel) const noexcept;
+    AnalyzerTap& getAnalyzerTap() noexcept { return analyzerTap; }
 
 private:
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
@@ -49,5 +51,6 @@ private:
     std::array<LevelMeter, 2> outputMeters;
     std::array<std::atomic<float>, 2> inputRmsDb { std::atomic<float>{-100.0f}, std::atomic<float>{-100.0f} };
     std::array<std::atomic<float>, 2> outputRmsDb { std::atomic<float>{-100.0f}, std::atomic<float>{-100.0f} };
+    AnalyzerTap analyzerTap;
     std::atomic<bool> deviceCallbackAttached { false };
 };

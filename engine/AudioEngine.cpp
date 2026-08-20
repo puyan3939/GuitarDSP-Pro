@@ -90,7 +90,9 @@ void AudioEngine::process(juce::AudioBuffer<float>& buffer, int startSample, int
         return;
 
     measureBlock(buffer, startSample, numSamples, inputMeters, inputRmsDb);
+    analyzerTap.pushInput(buffer, startSample, numSamples);
     signalChain.process(buffer, startSample, numSamples);
+    analyzerTap.pushOutput(buffer, startSample, numSamples);
     measureBlock(buffer, startSample, numSamples, outputMeters, outputRmsDb);
 }
 
