@@ -50,6 +50,8 @@ private:
 struct ExpressionPitchControl
 {
     std::atomic<bool> enabled{false};
+    // Route mask uses the same bits as HQEffectsRack: MAIN=1, CLEAN=2, SUB=4.
+    std::atomic<int> routeMask{1};
     std::atomic<float> semitones{0.0f},expression{1.0f},wet{1.0f},dry{0.0f};
     std::atomic<float> tracking{0.55f},tone{0.75f},smooth{0.60f};
 };
@@ -115,8 +117,7 @@ public:
     DualDelayStereoHQ():dl(240000),dr(240000){}
     void prepare(double sampleRate,int maxBlock)
     {
-        fs=sampleRate;juce::dsp::ProcessSpec s{fs,(juce::uint32)maxBlock,1};dl.prepare(s);dr.prepare(s);
-        hpL.prepare(fs);hpR.prepare(fs);lpL.prepare(fs);lpR.prepare(fs);reset();
+        fs=sampleRate;juce::dsp::ProcessSpec s{fs,(juce::uint32)maxBlock,1};dl.prepare(s);dr.prepare(s);hpL.prepare(fs);hpR.prepare(fs);lpL.prepare(fs);lpR.prepare(fs);reset();
     }
     void reset(){dl.reset();dr.reset();phase=0;lastL=lastR=0;hpL.reset();hpR.reset();lpL.reset();lpR.reset();}
     void process(juce::AudioBuffer<float>& b,int start,int n,const DualDelayControl& c)
