@@ -34,7 +34,9 @@ class ParallelRigHQ
 public:
     void prepare(double sampleRate, int maximumBlockSize)
     {
-        fs=sampleRate;maxBlock=maximumBlockSize;cleanWork.setSize(1,maximumBlockSize,false,false,true);subWork.setSize(1,maximumBlockSize,false,false,true);octave.prepare(sampleRate,maximumBlockSize);
+        fs=sampleRate;maxBlock=maximumBlockSize;
+        cleanWork.setSize(1,maximumBlockSize,false,false,true);subWork.setSize(1,maximumBlockSize,false,false,true);mainCleanWork.setSize(1,maximumBlockSize,false,false,true);
+        octave.prepare(sampleRate,maximumBlockSize);
         cleanHp.prepare(fs);cleanLp.prepare(fs);cleanDc.prepare(fs);cleanBass.reset();cleanMid.reset();cleanTreble.reset();cleanPresence.reset();cleanSag.prepare(fs,28.0f);
         subHp.prepare(fs);subLp.prepare(fs);subDc.prepare(fs);subBass.reset();subMid.reset();subTreble.reset();subBody.reset();subSag.prepare(fs,42.0f);
         mainDelay.prepare(fs,90.0f);cleanDelay.prepare(fs,90.0f);subDelay.prepare(fs,90.0f);reset();
@@ -42,16 +44,14 @@ public:
     void reset()
     {
         octave.reset();cleanHp.reset();cleanLp.reset();cleanDc.reset();cleanBass.reset();cleanMid.reset();cleanTreble.reset();cleanPresence.reset();cleanSag.reset();
-        subHp.reset();subLp.reset();subDc.reset();subBass.reset();subMid.reset();subTreble.reset();subBody.reset();subSag.reset();mainDelay.reset();cleanDelay.reset();subDelay.reset();cleanWork.clear();subWork.clear();
+        subHp.reset();subLp.reset();subDc.reset();subBass.reset();subMid.reset();subTreble.reset();subBody.reset();subSag.reset();mainDelay.reset();cleanDelay.reset();subDelay.reset();cleanWork.clear();subWork.clear();mainCleanWork.clear();
     }
 
-    // Compatibility overload: both parallel buses are sourced from the same dry tap.
     void process(const juce::AudioBuffer<float>& dryInput,juce::AudioBuffer<float>& processedMain,int startSample,int numSamples,const ParallelRigControl& c)
     {
         processBuses(dryInput,dryInput,processedMain,startSample,numSamples,c);
     }
 
-    // CLEAN and SUB can now arrive with different routed pedals already applied.
     void processBuses(const juce::AudioBuffer<float>& cleanInput,const juce::AudioBuffer<float>& subInput,juce::AudioBuffer<float>& processedMain,int startSample,int numSamples,const ParallelRigControl& c)
     {
         if(!c.enabled.load(std::memory_order_relaxed)||numSamples<=0)return;jassert(numSamples<=maxBlock);
@@ -67,14 +67,23 @@ public:
             const float subLatencyMs=1000.0f*octave.getEstimatedLatencySamples(c.subTracking.load())/(float)fs;mainMs+=subLatencyMs;cleanMs+=subLatencyMs;
         }
         mainDelay.setDelayMs(mainMs);cleanDelay.setDelayMs(cleanMs);subDelay.setDelayMs(subMs);
-        const auto* clean=cleanWork.getReadPointer(0);const auto* sub=subWork.getReadPointer(0);auto* mainOut=processedMain.getWritePointer(0,startSample);
-        for(int i=0;i<numSamples;++i)mainOut[i]=mainGain*mainDelay.process(mainOut[i])+cleanGain*cleanPolarity*cleanDelay.process(clean[i])+subGain*subPolarity*subDelay.process(sub[i]);
+        const auto* clean=cleanWork.getReadPointer(0);const auto* sub=subWork.getReadPointer(0);auto* mainOut=processedMain.getWritePointer(0,startSample);auto* stem=mainCleanWork.getWritePointer(0);
+        for(int i=0;i<numSamples;++i)
+        {
+            const float mainClean=mainGain*mainDelay.process(mainOut[i])+cleanGain*cleanPolarity*cleanDelay.process(clean[i]);
+            stem[i]=mainClean;
+            mainOut[i]=mainClean+subGain*subPolarity*subDelay.process(sub[i]);
+        }
         const int channels=juce::jmin(2,processedMain.getNumChannels());for(int ch=1;ch<channels;++ch)processedMain.copyFrom(ch,startSample,processedMain,0,startSample,numSamples);
     }
 
     void copySubStemTo(juce::AudioBuffer<float>& dest,int channel,int startSample,int numSamples,float levelDb=0.0f)const
     {
         if(channel<0||channel>=dest.getNumChannels()||numSamples<=0)return;const float g=dbToGain(levelDb);const auto*s=subWork.getReadPointer(0);auto*d=dest.getWritePointer(channel,startSample);for(int i=0;i<numSamples;++i)d[i]=s[i]*g;
+    }
+    void copyMainCleanStemTo(juce::AudioBuffer<float>& dest,int channel,int startSample,int numSamples,float levelDb=0.0f)const
+    {
+        if(channel<0||channel>=dest.getNumChannels()||numSamples<=0)return;const float g=dbToGain(levelDb);const auto*s=mainCleanWork.getReadPointer(0);auto*d=dest.getWritePointer(channel,startSample);for(int i=0;i<numSamples;++i)d[i]=s[i]*g;
     }
 private:
     class IntegerDelay
@@ -102,6 +111,6 @@ private:
         PitchOctaverHQ::Params p;p.octaveUp=0;p.octaveDown=1;p.dry=0;p.tracking=juce::jlimit(0.0f,1.0f,c.subTracking.load());p.tone=juce::jlimit(0.0f,1.0f,c.subTone.load());p.smooth=juce::jlimit(0.0f,1.0f,c.subSmooth.load());octave.setParameters(p);octave.processBlock(b);
         auto*d=b.getWritePointer(0);const float drive=juce::jlimit(0.0f,1.0f,c.subDrive.load());for(int i=0;i<n;++i){float x=subHp.process(d[i]);x=subBass.process(x);x=subBody.process(x);x=subMid.process(x);const float env=subSag.process(std::abs(x));const float supply=1.0f-.16f*drive*juce::jlimit(0.0f,1.0f,env*2.2f);const float pre=x*(1.0f+4.6f*drive),sat=supply*1.15f*asymSat(pre/juce::jmax(.38f,supply),.008f,.18f);x=lerp(x,sat,.22f+.58f*drive);x=subTreble.process(x);x=subLp.process(x);d[i]=subDc.process(x);}
     }
-    double fs=48000;int maxBlock=0;juce::AudioBuffer<float>cleanWork,subWork;PitchOctaverHQ octave;OnePoleHP cleanHp,cleanDc,subHp,subDc;OnePoleLP cleanLp,subLp;Biquad cleanBass,cleanMid,cleanTreble,cleanPresence,subBass,subMid,subTreble,subBody;Slew cleanSag,subSag;IntegerDelay mainDelay,cleanDelay,subDelay;
+    double fs=48000;int maxBlock=0;juce::AudioBuffer<float>cleanWork,subWork,mainCleanWork;PitchOctaverHQ octave;OnePoleHP cleanHp,cleanDc,subHp,subDc;OnePoleLP cleanLp,subLp;Biquad cleanBass,cleanMid,cleanTreble,cleanPresence,subBass,subMid,subTreble,subBody;Slew cleanSag,subSag;IntegerDelay mainDelay,cleanDelay,subDelay;
 };
 }
