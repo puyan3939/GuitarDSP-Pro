@@ -25,6 +25,7 @@ private:
     juce::Label resultInfo;
     juce::Label osInfo;
     juce::TextButton measureButton { "MEASURE LOOPBACK" };
+    juce::TextButton restoreButton { "RESTORE AUDIO" };
     juce::TextButton refreshDspButton { "MEASURE DSP IMPULSE" };
     int dspLatencySamples = -1;
 };
