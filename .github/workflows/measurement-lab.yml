@@ -1,0 +1,78 @@
+name: Measurement Lab
+
+on:
+  push:
+    branches:
+      - agent/signal-analyzer
+    paths:
+      - 'CMakeLists.txt'
+      - 'engine/LatencyProbe.h'
+      - 'hq_preload/dsp/common/HQDSP.h'
+      - 'hq_preload/dsp/amp/**'
+      - 'tests/MeasurementLab.cpp'
+      - '.github/workflows/measurement-lab.yml'
+  pull_request:
+    paths:
+      - 'CMakeLists.txt'
+      - 'engine/LatencyProbe.h'
+      - 'hq_preload/dsp/common/HQDSP.h'
+      - 'hq_preload/dsp/amp/**'
+      - 'tests/MeasurementLab.cpp'
+      - '.github/workflows/measurement-lab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guitardsp-measurement-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    name: 1x-16x oversampling and latency probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout GuitarDSP-Pro
+        uses: actions/checkout@v5
+      - name: Install JUCE build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build git pkg-config ccache \
+            libasound2-dev libjack-jackd2-dev \
+            libfreetype6-dev libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev libxi-dev \
+            libglu1-mesa-dev mesa-common-dev libegl-dev
+      - name: Checkout JUCE 9.0.0
+        uses: actions/checkout@v5
+        with:
+          repository: juce-framework/JUCE
+          ref: 9.0.0
+          path: _deps/JUCE
+          fetch-depth: 1
+      - name: Configure measurement target
+        run: |
+          cmake -S . -B build-measure -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF \
+            -DGUITARDSP_FETCH_FACTORY_IRS=OFF \
+            -DGUITARDSP_JUCE_PATH="${{ github.workspace }}/_deps/JUCE"
+      - name: Build Measurement Lab
+        run: cmake --build build-measure --target GuitarDSPMeasurementLab --parallel 4
+      - name: Run 1x / 2x / 4x / 8x / 16x A-B
+        run: |
+          set -o pipefail
+          ./build-measure/GuitarDSPMeasurementLab_artefacts/Release/GuitarDSPMeasurementLab \
+            oversampling-report.json | tee measurement-lab-log.txt
+      - name: Publish measurement report
+        uses: actions/upload-artifact@v4
+        with:
+          name: guitardsp-oversampling-lab
+          path: |
+            oversampling-report.json
+            measurement-lab-log.txt
+          if-no-files-found: error
+          retention-days: 30
