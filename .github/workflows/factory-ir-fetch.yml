@@ -3,8 +3,8 @@ name: Factory IR Fetch
 on:
   push:
     branches: [agent/signal-analyzer]
-    paths:
-      - '.github/workflows/factory-ir-fetch.yml'
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -24,7 +24,7 @@ jobs:
             -o brutal.zip
           sha256sum brutal.zip | tee factory-ir-source.sha256
           unzip -q brutal.zip -d brutal
-          find brutal -type f -maxdepth 6 -print | sort
+          find brutal -maxdepth 6 -type f -print | sort
       - name: Extract and validate 48 kHz WAVs
         shell: python
         run: |
