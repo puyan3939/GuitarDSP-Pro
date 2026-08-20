@@ -40,7 +40,7 @@ private:
     void copyDetectedMonoToStereo(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void applyInputLoading(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void applyInputGain(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
-    void captureParallelTap(const juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
+    void captureParallelTaps(const juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void processExpressionPitch(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void processLegacyAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void processHQAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
@@ -51,7 +51,8 @@ private:
     juce::SmoothedValue<float> inputGain;
     juce::SmoothedValue<float> startupFade;
     juce::AudioBuffer<float> ampWorkBuffer;
-    juce::AudioBuffer<float> parallelTapBuffer;
+    juce::AudioBuffer<float> cleanRouteBuffer;
+    juce::AudioBuffer<float> subRouteBuffer;
     juce::AudioBuffer<float> expressionWorkBuffer;
 
     AmpEngine ampEngine;
