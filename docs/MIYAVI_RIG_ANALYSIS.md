@@ -13,13 +13,14 @@ Public rig descriptions and the user's supplied board/article references support
 - Per-pedal routing mask: MAIN=1, CLEAN=2, SUB=4, including multi-destination routing.
 - CLEAN high-headroom amp role with HP/LP, Bass/Mid/Treble, Presence, Drive, delay and polarity.
 - SUB fixed octave-down into a dedicated bass amp role with HP/LP, Body, Bass/Mid/Treble, Drive, pitch Tracking/Tone/Smooth, delay and polarity.
-- Automatic main/clean alignment against the octave path, plus manual path delays and polarity inversion.
+- Automatic main/clean alignment against the octave path, plus manual MAIN/CLEAN/SUB delays and CLEAN/SUB polarity inversion.
 - Expression pitch / Whammy-style +/-24 semitone processing with route selection.
 - Stereo dual delay with independent L/R time/feedback and cross-feedback.
 - Eight performance scenes.
 - Stereo mix or physical stem output (`OUT1 MAIN+CLEAN`, `OUT2 SUB`).
 - Pickup/cable/input-impedance loading model ahead of gain and fuzz.
 - Analyzer taps retained at input, post-pedals, post-amp, post-cab and output.
+- The RIG page exposes the complete path controls above rather than hiding them in preset JSON.
 
 ## Preset compatibility
 
