@@ -32,7 +32,8 @@ target_sources(GuitarDSPPro PRIVATE
     hq_preload/dsp/HQEffectsRack.cpp
     hq_preload/dsp/cab/CabMicEngineHQ.cpp
     ui/MainView.cpp ui/NavigationBar.cpp
-    ui/pages/AmpPage.cpp ui/pages/PedalPage.cpp ui/pages/CabPage.cpp ui/pages/EffectsPage.cpp ui/pages/SettingsPage.cpp
+    ui/pages/AmpPage.cpp ui/pages/PedalPage.cpp ui/pages/CabPage.cpp
+    ui/pages/EffectsPage.cpp ui/pages/PerformancePage.cpp ui/pages/SettingsPage.cpp
 )
 
 target_include_directories(GuitarDSPPro PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
