@@ -9,12 +9,14 @@ on:
       - 'CMakeLists.txt'
       - 'hq_preload/dsp/amp/**'
       - 'tests/JVMMeasuredFit.cpp'
+      - 'ui/SignalAnalyzerPanel.cpp'
   pull_request:
     paths:
       - '.github/workflows/jvm-measured-fit.yml'
       - 'CMakeLists.txt'
       - 'hq_preload/dsp/amp/**'
       - 'tests/JVMMeasuredFit.cpp'
+      - 'ui/SignalAnalyzerPanel.cpp'
   workflow_dispatch:
 
 permissions:
@@ -71,26 +73,32 @@ jobs:
             in_name="${setting}_G5_file_${file_no}_input.wav"
             ref_name="${setting}_G5_file_${file_no}.wav"
             echo "Downloading ${setting} file ${file_no} (${split})"
-            curl -fL --retry 3 --retry-delay 2 \
-              "${base}/${setting}/${in_name}" \
-              -o "jvm-data/${in_name}"
-            curl -fL --retry 3 --retry-delay 2 \
-              "${base}/${setting}/${ref_name}" \
-              -o "jvm-data/${ref_name}"
+            curl -fsSL --retry 3 --retry-delay 2 \
+              "${base}/${setting}/${in_name}" -o "jvm-data/${in_name}"
+            curl -fsSL --retry 3 --retry-delay 2 \
+              "${base}/${setting}/${ref_name}" -o "jvm-data/${ref_name}"
             printf '%s %s %s %s %s %s %s\n' \
               "${split}" "${setting}_file${file_no}" \
               "${bass}" "${middle}" "${treble}" \
               "${in_name}" "${ref_name}" >> jvm-data/manifest.tsv
           }
 
-          fetch_pair fit     B1_M3_T7    1  3  7  4
-          fetch_pair fit     B10_M0_T0  10  0  0  4
-          fetch_pair fit     B3_M7_T1    3  7  1  7
-          fetch_pair holdout B0_M0_T10   0  0 10  7
-          fetch_pair holdout B10_M0_T10 10  0 10  7
+          # Use every input/reference listening pair published by the authors.
+          # Three tone settings participate in calibration; two entire settings
+          # remain untouched until holdout scoring.
+          for n in 4 8 3 1 2 5; do
+            fetch_pair fit B1_M3_T7   1 3 7 "$n"
+            fetch_pair fit B10_M0_T0 10 0 0 "$n"
+          done
+          for n in 7 9; do
+            fetch_pair fit     B3_M7_T1    3 7 1 "$n"
+            fetch_pair holdout B0_M0_T10   0 0 10 "$n"
+            fetch_pair holdout B10_M0_T10 10 0 10 "$n"
+          done
 
-          ls -lh jvm-data/*.wav
+          echo "Measured manifest:"
           cat jvm-data/manifest.tsv
+          echo "Downloaded WAV count: $(find jvm-data -name '*.wav' | wc -l)"
 
       - name: Configure measured-fit target
         run: |

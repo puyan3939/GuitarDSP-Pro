@@ -71,8 +71,9 @@ SignalAnalyzerPanel::SignalAnalyzerPanel(AudioEngine& engine)
     ampReferenceLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(165, 174, 184));
     ampReferenceSelector.addItem("CURRENT", 1);
     ampReferenceSelector.addItem("5F6-A REF", 2);
+    ampReferenceSelector.addItem("JVM410H G5 MEASURED", 3);
     ampReferenceSelector.setSelectedId(1, juce::dontSendNotification);
-    ampReferenceSelector.setTooltip("Loads a circuit-derived 5F6-A HQ reference. Select HQ 20 in the main window to hear/analyse it. Switching back restores the captured custom HQ parameters.");
+    ampReferenceSelector.setTooltip("Select CURRENT, the circuit-derived 5F6-A reference, or the public-measurement-calibrated JVM410H OD1 Gain-5 reference. Select HQ 20 in the main window to hear/analyse it. Returning to CURRENT restores the captured custom HQ parameters.");
     customAmpSnapshot = audioEngine.getHQAmpEngine().getParameters();
     customAmpSnapshotValid = true;
 
@@ -126,14 +127,19 @@ SignalAnalyzerPanel::~SignalAnalyzerPanel()
 void SignalAnalyzerPanel::applyAmpReference()
 {
     auto& amp = audioEngine.getHQAmpEngine();
-    if (ampReferenceSelector.getSelectedId() == 2)
+    const int selectedReference = ampReferenceSelector.getSelectedId();
+    if (selectedReference == 2 || selectedReference == 3)
     {
         if (!referenceApplied)
         {
             customAmpSnapshot = amp.getParameters();
             customAmpSnapshotValid = true;
         }
-        amp.setParameters(guitardsp::hq::AmpEngineHQ::makeBassman5F6AReference());
+
+        if (selectedReference == 2)
+            amp.setParameters(guitardsp::hq::AmpEngineHQ::makeBassman5F6AReference());
+        else
+            amp.setParameters(guitardsp::hq::AmpEngineHQ::makeJVM410HOD1Reference(0.5f, 0.5f, 0.5f));
         referenceApplied = true;
     }
     else if (referenceApplied && customAmpSnapshotValid)
@@ -490,7 +496,7 @@ void SignalAnalyzerPanel::resized()
     timeSelector.setBounds(top.removeFromLeft(70).reduced(2, 2));
     holdButton.setBounds(top.removeFromLeft(60).reduced(3, 2));
     ampReferenceLabel.setBounds(top.removeFromLeft(48));
-    ampReferenceSelector.setBounds(top.removeFromLeft(128).reduced(2, 2));
+    ampReferenceSelector.setBounds(top.removeFromLeft(185).reduced(2, 2));
 
     auto generator = top;
     frequencyLabel.setBounds(generator.removeFromLeft(38));
