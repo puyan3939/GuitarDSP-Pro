@@ -62,7 +62,9 @@ jobs:
           out.mkdir()
 
           pattern = re.compile(r'B([0-9.]+)_M([0-9.]+)_T([0-9.]+)_G([0-9.]+)', re.I)
-          wanted = [0.0, 1.0, 2.0, 4.0, 5.0, 6.0, 8.0, 10.0]
+          # These are the Gain positions with a usable dry/wet pair in the
+          # ToneTwisT archive. The continuous model still spans the full 0..10 knob.
+          wanted = [0.0, 2.0, 4.0, 5.0, 6.0, 8.0, 10.0]
           holdout = {2.0, 6.0}
 
           def knob(raw):
@@ -93,7 +95,6 @@ jobs:
                   matches = inputs_by_base.get(input_base, [])
                   if not matches:
                       continue
-                  # Prefer a dry file from the same train/test tree if several share a basename.
                   target_parts = pathlib.PurePosixPath(target).parts
                   split_tokens = [p for p in target_parts if p.lower() in ('trainval','train','val','test')]
                   input_path = matches[0]
