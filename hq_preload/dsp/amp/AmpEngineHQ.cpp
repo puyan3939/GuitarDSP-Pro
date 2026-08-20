@@ -94,21 +94,26 @@ AmpHQParams AmpEngineHQ::makeJVM410HOD1Reference(float bass, float middle, float
     p.stage[6] = { 105.0f, 9800.0f, 3.55f, 0.045f, 0.38f, 0.145f, 7200.0f, 0.70f };
     p.stage[8] = { 58.0f, 13200.0f, 1.38f, 0.010f, 0.14f, 0.060f, 10800.0f, 0.94f };
 
-    // Use the measured JVM passive tone-stack topology instead of the generic
-    // three independent peak filters. Control interaction is therefore preserved.
+    // Physical JVM tone-stack controls. These component/taper factors and the
+    // nonlinear constants below are calibration v2: the v1 reference plus the
+    // residual fit from the public DAFx23 JVM410H input/speaker-out pairs.
+    // Absolute measurement-chain gain and polarity remain outside the amp model.
     p.jvmToneStackEnabled = true;
     p.jvmToneStack.bass = bass;
     p.jvmToneStack.middle = middle;
     p.jvmToneStack.treble = treble;
+    p.jvmToneStack.bassTaper = 1.743625f;
+    p.jvmToneStack.middleTaper = 0.350000f;
+    p.jvmToneStack.trebleTaper = 0.350000f;
+    p.jvmToneStack.r1Scale = 1.080000f;
+    p.jvmToneStack.c1Scale = 1.132200f;
+    p.jvmToneStack.c23Scale = 1.080000f;
 
-    // Nonlinear measured calibration v1 from the public DAFx23 input/reference
-    // pairs. Absolute measurement-chain gain and polarity are intentionally not
-    // baked into the amp model.
-    constexpr float driveScale = 1.290000f;
-    constexpr float biasShift = 0.013750f;
-    constexpr float lowPassScale = 1.174000f;
-    constexpr float asymmetryScale = 0.710000f;
-    constexpr float memoryScale = 1.154000f;
+    constexpr float driveScale = 1.483500f;
+    constexpr float biasShift = 0.031787f;
+    constexpr float lowPassScale = 1.3680035f;
+    constexpr float asymmetryScale = 0.74700875f;
+    constexpr float memoryScale = 1.441923f;
     static constexpr std::array<int, 5> measuredPreampStages { 0, 2, 4, 6, 8 };
     for (const int index : measuredPreampStages)
     {
@@ -121,7 +126,7 @@ AmpHQParams AmpEngineHQ::makeJVM410HOD1Reference(float bass, float middle, float
         s.memory = juce::jlimit(0.0f, 1.0f, s.memory * memoryScale);
     }
 
-    p.stage[10] = { 28.0f, 16500.0f, 0.30f, 0.0f, 0.02f, 0.020f, 15000.0f, 3.18f };
+    p.stage[10] = { 28.0f, 16500.0f, 0.30f, 0.0f, 0.02f, 0.020f, 15000.0f, 17.49f };
     p.stage[11] = { 44.0f, 14200.0f, 1.05f, 0.010f, 0.16f, 0.070f, 11200.0f, 1.22f };
     p.stage[14] = { 38.0f, 13200.0f, 1.22f, 0.012f, 0.20f, 0.090f, 10200.0f, 1.02f };
 
