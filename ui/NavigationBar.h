@@ -12,6 +12,7 @@ public:
         pedal,
         cab,
         effects,
+        performance,
         settings
     };
 
@@ -25,6 +26,6 @@ private:
     void configureButton(juce::TextButton& button, const juce::String& text, Page page);
     void refreshColours();
 
-    juce::TextButton ampButton, pedalButton, cabButton, effectsButton, settingsButton;
+    juce::TextButton ampButton, pedalButton, cabButton, effectsButton, performanceButton, settingsButton;
     Page currentPage = Page::amp;
 };

@@ -7,6 +7,7 @@
 #include "pages/PedalPage.h"
 #include "pages/CabPage.h"
 #include "pages/EffectsPage.h"
+#include "pages/PerformancePage.h"
 #include "pages/SettingsPage.h"
 
 class MainView : public juce::Component,
@@ -40,6 +41,7 @@ private:
     PedalPage pedalPage;
     CabPage cabPage;
     EffectsPage effectsPage;
+    PerformancePage performancePage;
     SettingsPage settingsPage;
 
     juce::Slider inputGainSlider;
