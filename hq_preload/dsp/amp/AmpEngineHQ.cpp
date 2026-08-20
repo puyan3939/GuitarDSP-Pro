@@ -72,17 +72,24 @@ AmpHQParams AmpEngineHQ::makeBassman5F6AReference()
     p.sagRecoveryMs = 125.0f;
     p.damping = 0.52f;
     p.presence = 0.34f;
+    p.resonance = 0.50f;
     p.biasExcursion = 0.18f;
     p.transformerSaturation = 0.20f;
     p.outputDb = -10.5f;
     return p;
 }
 
-AmpHQParams AmpEngineHQ::makeJVM410HOD1Reference(float bass, float middle, float treble)
+AmpHQParams AmpEngineHQ::makeJVM410HOD1Reference(float bass, float middle, float treble,
+                                                  float gain, float master,
+                                                  float presence, float resonance)
 {
     bass = juce::jlimit(0.0f, 1.0f, bass);
     middle = juce::jlimit(0.0f, 1.0f, middle);
     treble = juce::jlimit(0.0f, 1.0f, treble);
+    gain = juce::jlimit(0.0f, 1.0f, gain);
+    master = juce::jlimit(0.0f, 1.0f, master);
+    presence = juce::jlimit(0.0f, 1.0f, presence);
+    resonance = juce::jlimit(0.0f, 1.0f, resonance);
 
     AmpHQParams p = defaults();
     for (auto& s : p.stage)
@@ -94,10 +101,6 @@ AmpHQParams AmpEngineHQ::makeJVM410HOD1Reference(float bass, float middle, float
     p.stage[6] = { 105.0f, 9800.0f, 3.55f, 0.045f, 0.38f, 0.145f, 7200.0f, 0.70f };
     p.stage[8] = { 58.0f, 13200.0f, 1.38f, 0.010f, 0.14f, 0.060f, 10800.0f, 0.94f };
 
-    // Physical JVM tone-stack controls. These component/taper factors and the
-    // nonlinear constants below are calibration v2: the v1 reference plus the
-    // residual fit from the public DAFx23 JVM410H input/speaker-out pairs.
-    // Absolute measurement-chain gain and polarity remain outside the amp model.
     p.jvmToneStackEnabled = true;
     p.jvmToneStack.bass = bass;
     p.jvmToneStack.middle = middle;
@@ -126,6 +129,17 @@ AmpHQParams AmpEngineHQ::makeJVM410HOD1Reference(float bass, float middle, float
         s.memory = juce::jlimit(0.0f, 1.0f, s.memory * memoryScale);
     }
 
+    // Gain calibration v0 is deliberately isolated here so the ToneTwisT
+    // multi-gain fitter can update two constants without disturbing the G5
+    // calibration above. At Gain=5 the delta is exactly 0 dB.
+    constexpr float gainSpanDb = 24.0f;
+    constexpr float gainCurve = 1.25f;
+    const float gainPosition = std::pow(gain, gainCurve);
+    const float gainFivePosition = std::pow(0.5f, gainCurve);
+    const float gainDeltaDb = gainSpanDb * (gainPosition - gainFivePosition);
+    p.stage[2].drive = juce::jlimit(0.15f, 12.0f, p.stage[2].drive * dbToGain(gainDeltaDb * 0.68f));
+    p.stage[4].drive = juce::jlimit(0.15f, 12.0f, p.stage[4].drive * dbToGain(gainDeltaDb * 0.32f));
+
     p.stage[10] = { 28.0f, 16500.0f, 0.30f, 0.0f, 0.02f, 0.020f, 15000.0f, 17.49f };
     p.stage[11] = { 44.0f, 14200.0f, 1.05f, 0.010f, 0.16f, 0.070f, 11200.0f, 1.22f };
     p.stage[14] = { 38.0f, 13200.0f, 1.22f, 0.012f, 0.20f, 0.090f, 10200.0f, 1.02f };
@@ -134,20 +148,23 @@ AmpHQParams AmpEngineHQ::makeJVM410HOD1Reference(float bass, float middle, float
     p.stage[17] = { 46.0f, 11800.0f, 1.42f, 0.014f, 0.18f, 0.120f, 8300.0f, 0.94f };
     p.stage[19] = { 30.0f, 8800.0f, 0.42f, 0.002f, 0.05f, 0.030f, 8000.0f, 2.18f };
 
+    // Master / Presence / Resonance are explicitly physical-model controls:
+    // public JVM data currently holds them fixed at 5, so 0.5 preserves the
+    // measured operating point while other values remain unverified.
+    p.stage[16].output *= dbToGain((master - 0.5f) * 18.0f);
     p.sag = 0.18f;
     p.sagRecoveryMs = 72.0f;
     p.damping = 0.58f;
-    p.presence = 0.48f;
+    p.presence = juce::jlimit(0.0f, 1.0f, 0.08f + 0.80f * presence);
+    p.resonance = resonance;
     p.biasExcursion = 0.12f;
     p.transformerSaturation = 0.24f;
     p.outputDb = -12.0f;
     return p;
 }
 
-// 16x internal processing at 48 kHz = 768 kHz. This is intentionally
-// aggressive for a quality A/B test; revert to 8x if the audible benefit
-// does not justify the realtime CPU cost.
-AmpEngineHQ::AmpEngineHQ():params(defaults()),oversampling(4){}
+AmpEngineHQ::AmpEngineHQ(int oversamplingOrder)
+    : params(defaults()), oversampling(juce::jlimit(0, 4, oversamplingOrder)) {}
 AmpEngineHQ::~AmpEngineHQ() = default;
 
 void AmpEngineHQ::prepare(double sampleRate,int maxBlockSize)
@@ -213,7 +230,9 @@ float AmpEngineHQ::processChannel(Channel& c,float x)
     const float lowFeedback=c.nfbLow.process(c.nfbHistory);
     const float highFeedback=c.nfbHistory-lowFeedback;
     const float presenceAmount=juce::jlimit(0.0f,1.0f,params.presence);
-    const float feedbackSignal=lowFeedback+(1.0f-0.78f*presenceAmount)*highFeedback;
+    const float resonanceAmount=juce::jlimit(0.0f,1.0f,params.resonance);
+    const float lowFeedbackScale=juce::jlimit(0.55f,1.45f,1.0f-0.85f*(resonanceAmount-0.5f));
+    const float feedbackSignal=lowFeedback*lowFeedbackScale+(1.0f-0.78f*presenceAmount)*highFeedback;
     const float nfb=juce::jlimit(0.0f,0.82f,params.damping*0.68f);
     x-=feedbackSignal*nfb;
 
