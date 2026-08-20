@@ -34,7 +34,7 @@ target_sources(GuitarDSPPro PRIVATE
     hq_preload/dsp/HQEffectsRack.cpp
     hq_preload/dsp/cab/CabMicEngineHQ.cpp
     ui/MainView.cpp ui/NavigationBar.cpp ui/SignalAnalyzerPanel.cpp ui/MeasurementLabPanel.cpp
-    ui/pages/AmpPage.cpp ui/pages/PedalPage.cpp ui/pages/CabPage.cpp ui/pages/EffectsPage.cpp ui/pages/SettingsPage.cpp
+    ui/pages/AmpPage.cpp ui/pages/PedalPage.cpp ui/pages/CabPage.cpp ui/pages/EffectsPage.cpp ui/pages/PerformancePage.cpp ui/pages/SettingsPage.cpp
 )
 
 target_include_directories(GuitarDSPPro PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -69,8 +69,6 @@ target_include_directories(GuitarDSPReferenceTests PRIVATE ${CMAKE_CURRENT_SOURC
 target_compile_definitions(GuitarDSPReferenceTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(GuitarDSPReferenceTests PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
 
-# Offline measured-data calibration tools. They are intentionally not CTests so
-# the fast PR check never depends on external network data.
 juce_add_console_app(GuitarDSPJVMFit PRODUCT_NAME "GuitarDSP-JVM-Measured-Fit")
 juce_generate_juce_header(GuitarDSPJVMFit)
 target_sources(GuitarDSPJVMFit PRIVATE tests/JVMMeasuredFit.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/amp/JvmToneStack.cpp)
