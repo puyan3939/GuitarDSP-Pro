@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include <array>
 #include "../dsp/SafetyLimiter.h"
 #include "../dsp/amp/AmpEngine.h"
 #include "../hq_preload/dsp/amp/AmpEngineHQ.h"
@@ -41,7 +42,7 @@ private:
     void applyInputLoading(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void applyInputGain(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void captureParallelTaps(const juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
-    void processExpressionPitch(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
+    void processExpressionPitchRoute(juce::AudioBuffer<float>& buffer, int startSample, int numSamples, int routeBit, int stateIndex);
     void processLegacyAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void processHQAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void applySceneRequests();
@@ -62,7 +63,7 @@ private:
     guitardsp::hq::ParallelRigHQ parallelRig;
     guitardsp::hq::InputLoadingHQ inputLoading[2];
     guitardsp::hq::InputLoadingControl inputLoadingControl;
-    guitardsp::hq::ExpressionPitchHQ expressionPitch;
+    std::array<guitardsp::hq::ExpressionPitchHQ, 3> expressionPitch;
     guitardsp::hq::ExpressionPitchControl expressionPitchControl;
     guitardsp::hq::DualDelayStereoHQ dualDelay;
     guitardsp::hq::DualDelayControl dualDelayControl;
