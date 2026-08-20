@@ -27,6 +27,22 @@ public:
         reverbDecay.setValue(r.decay.load(),juce::dontSendNotification); reverbDamping.setValue(r.damping.load(),juce::dontSendNotification);
         reverbPreDelay.setValue(r.preDelayMs.load(),juce::dontSendNotification); reverbMix.setValue(r.mix.load(),juce::dontSendNotification);
         reverbMod.setValue(r.mod.load(),juce::dontSendNotification); reverbDrip.setValue(r.drip.load(),juce::dontSendNotification);
+
+        auto& p=rack.parallelRigControl();
+        parallelEnabled.setToggleState(p.enabled.load(),juce::dontSendNotification);
+        cleanEnabled.setToggleState(p.cleanEnabled.load(),juce::dontSendNotification);
+        subEnabled.setToggleState(p.subEnabled.load(),juce::dontSendNotification);
+        cleanInvert.setToggleState(p.cleanInvert.load(),juce::dontSendNotification);
+        subInvert.setToggleState(p.subInvert.load(),juce::dontSendNotification);
+        mainLevel.setValue(p.mainLevelDb.load(),juce::dontSendNotification); mainDelay.setValue(p.mainDelayMs.load(),juce::dontSendNotification);
+        cleanLevel.setValue(p.cleanLevelDb.load(),juce::dontSendNotification); cleanHp.setValue(p.cleanHpHz.load(),juce::dontSendNotification);
+        cleanLp.setValue(p.cleanLpHz.load(),juce::dontSendNotification); cleanPresence.setValue(p.cleanPresenceDb.load(),juce::dontSendNotification);
+        cleanDrive.setValue(p.cleanDrive.load(),juce::dontSendNotification); cleanDelay.setValue(p.cleanDelayMs.load(),juce::dontSendNotification);
+        subLevel.setValue(p.subLevelDb.load(),juce::dontSendNotification); subHp.setValue(p.subHpHz.load(),juce::dontSendNotification);
+        subLp.setValue(p.subLpHz.load(),juce::dontSendNotification); subBody.setValue(p.subBodyDb.load(),juce::dontSendNotification);
+        subDrive.setValue(p.subDrive.load(),juce::dontSendNotification); subTracking.setValue(p.subTracking.load(),juce::dontSendNotification);
+        subTone.setValue(p.subTone.load(),juce::dontSendNotification); subSmooth.setValue(p.subSmooth.load(),juce::dontSendNotification);
+        subDelay.setValue(p.subDelayMs.load(),juce::dontSendNotification);
         updateModeHints();
     }
 
@@ -34,14 +50,22 @@ private:
     void pushMod();
     void pushDelay();
     void pushReverb();
+    void pushParallel();
     void updateModeHints();
     void setupKnob(juce::Slider& s, double lo, double hi, double value, double step, const juce::String& suffix = {});
 
     guitardsp::hq::HQEffectsRack& rack;
 
     juce::Label title;
-    juce::Label modTitle, delayTitle, reverbTitle;
-    juce::Label modHint, delayHint, reverbHint;
+    juce::Label routingTitle, modTitle, delayTitle, reverbTitle;
+    juce::Label routingHint, modHint, delayHint, reverbHint;
+
+    juce::ToggleButton parallelEnabled { "PARALLEL RIG" };
+    juce::ToggleButton cleanEnabled { "CLEAN" }, subEnabled { "SUB" };
+    juce::ToggleButton cleanInvert { "CLEAN Ø" }, subInvert { "SUB Ø" };
+    juce::Slider mainLevel, mainDelay;
+    juce::Slider cleanLevel, cleanHp, cleanLp, cleanPresence, cleanDrive, cleanDelay;
+    juce::Slider subLevel, subHp, subLp, subBody, subDrive, subTracking, subTone, subSmooth, subDelay;
 
     juce::ComboBox modType;
     juce::Slider modRate, modDepth, modMix, modFeedback, modManual, modShape;
