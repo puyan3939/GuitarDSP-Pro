@@ -82,8 +82,8 @@ void CabPage::updateInfo()
 {
     if(irEngine.getSelectedId()==3)
     {
-        const auto sizeText = irSize.getSelectedId()==1 ? "1024" : (irSize.getSelectedId()==2 ? "2048" : "FULL");
-        info.setText("USER IR: WAV/AIFF is decoded and resampled by JUCE convolution. Mono path uses the file's first channel; length=" + sizeText + ".",juce::dontSendNotification);
+        const juce::String sizeText = irSize.getSelectedId()==1 ? "1024" : (irSize.getSelectedId()==2 ? "2048" : "FULL");
+        info.setText(juce::String("USER IR: WAV/AIFF is decoded and resampled by JUCE convolution. Mono path uses the file's first channel; length=") + sizeText + ".",juce::dontSendNotification);
         irName.setText("IR: " + cab.getExternalIrName(),juce::dontSendNotification);
     }
     else if(irEngine.getSelectedId()==2)
