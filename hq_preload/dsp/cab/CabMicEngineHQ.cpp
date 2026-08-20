@@ -79,7 +79,7 @@ bool CabMicEngineHQ::loadExternalImpulse(const juce::File& file)
 
 void CabMicEngineHQ::clearExternalImpulse()
 {
-    externalIrFile = {};
+    externalIrFile = juce::File();
     if (params.irEngine == CabIrEngine::external && convolution[0])
         rebuildImpulse();
 }
