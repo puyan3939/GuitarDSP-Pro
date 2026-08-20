@@ -9,6 +9,7 @@ on:
       - 'engine/LatencyProbe.h'
       - 'hq_preload/dsp/common/HQDSP.h'
       - 'hq_preload/dsp/amp/**'
+      - 'hq_preload/dsp/pedals/**'
       - 'tests/MeasurementLab.cpp'
       - '.github/workflows/measurement-lab.yml'
   pull_request:
@@ -17,6 +18,7 @@ on:
       - 'engine/LatencyProbe.h'
       - 'hq_preload/dsp/common/HQDSP.h'
       - 'hq_preload/dsp/amp/**'
+      - 'hq_preload/dsp/pedals/**'
       - 'tests/MeasurementLab.cpp'
       - '.github/workflows/measurement-lab.yml'
   workflow_dispatch:
