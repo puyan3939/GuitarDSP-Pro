@@ -9,6 +9,7 @@ on:
       - 'CMakeLists.txt'
       - 'hq_preload/dsp/amp/**'
       - 'tests/JVMMeasuredFit.cpp'
+      - 'tests/JVMPhysicalFit.cpp'
       - 'ui/SignalAnalyzerPanel.cpp'
   pull_request:
     paths:
@@ -16,6 +17,7 @@ on:
       - 'CMakeLists.txt'
       - 'hq_preload/dsp/amp/**'
       - 'tests/JVMMeasuredFit.cpp'
+      - 'tests/JVMPhysicalFit.cpp'
       - 'ui/SignalAnalyzerPanel.cpp'
   workflow_dispatch:
 
@@ -72,20 +74,16 @@ jobs:
             file_no="$6"
             in_name="${setting}_G5_file_${file_no}_input.wav"
             ref_name="${setting}_G5_file_${file_no}.wav"
-            echo "Downloading ${setting} file ${file_no} (${split})"
-            curl -fsSL --retry 3 --retry-delay 2 \
-              "${base}/${setting}/${in_name}" -o "jvm-data/${in_name}"
-            curl -fsSL --retry 3 --retry-delay 2 \
-              "${base}/${setting}/${ref_name}" -o "jvm-data/${ref_name}"
+            curl -fsSL --retry 3 --retry-delay 2 "${base}/${setting}/${in_name}" -o "jvm-data/${in_name}"
+            curl -fsSL --retry 3 --retry-delay 2 "${base}/${setting}/${ref_name}" -o "jvm-data/${ref_name}"
             printf '%s %s %s %s %s %s %s\n' \
-              "${split}" "${setting}_file${file_no}" \
-              "${bass}" "${middle}" "${treble}" \
+              "${split}" "${setting}_file${file_no}" "${bass}" "${middle}" "${treble}" \
               "${in_name}" "${ref_name}" >> jvm-data/manifest.tsv
           }
 
           # Calibration uses only published pairs whose input/reference envelope
-          # correspondence was verified by the coarse-alignment diagnostic.
-          # Entire B0_M0_T10 and B10_M0_T10 settings remain untouched holdouts.
+          # correspondence was verified by the alignment diagnostic. Two entire
+          # tone settings remain untouched until holdout scoring.
           for n in 4 3 2 5; do
             fetch_pair fit B1_M3_T7   1 3 7 "$n"
             fetch_pair fit B10_M0_T0 10 0 0 "$n"
@@ -98,7 +96,6 @@ jobs:
 
           echo "Measured manifest:"
           cat jvm-data/manifest.tsv
-          echo "Downloaded WAV count: $(find jvm-data -name '*.wav' | wc -l)"
 
       - name: Configure measured-fit target
         run: |
@@ -107,21 +104,21 @@ jobs:
             -DBUILD_TESTING=OFF \
             -DGUITARDSP_JUCE_PATH="${{ github.workspace }}/_deps/JUCE"
 
-      - name: Build measured-fit tool
-        run: cmake --build build-jvm --target GuitarDSPJVMFit --parallel 4
+      - name: Build physical measured-fit tool
+        run: cmake --build build-jvm --target GuitarDSPJVMPhysicalFit --parallel 4
 
-      - name: Fit and evaluate against measured JVM410H clips
+      - name: Fit physical JVM model and score unseen settings
         run: |
           set -o pipefail
-          ./build-jvm/GuitarDSPJVMFit_artefacts/Release/GuitarDSPJVMFit \
-            jvm-data/manifest.tsv jvm-fit-report.json | tee jvm-fit-log.txt
+          ./build-jvm/GuitarDSPJVMPhysicalFit_artefacts/Release/GuitarDSPJVMPhysicalFit \
+            jvm-data/manifest.tsv jvm-physical-fit-report.json | tee jvm-physical-fit-log.txt
 
       - name: Publish fit report
         uses: actions/upload-artifact@v4
         with:
-          name: jvm410h-od1-measured-fit
+          name: jvm410h-od1-physical-fit
           path: |
-            jvm-fit-report.json
-            jvm-fit-log.txt
+            jvm-physical-fit-report.json
+            jvm-physical-fit-log.txt
           if-no-files-found: error
           retention-days: 30

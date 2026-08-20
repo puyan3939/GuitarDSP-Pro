@@ -54,12 +54,21 @@ target_include_directories(GuitarDSPReferenceTests PRIVATE ${CMAKE_CURRENT_SOURC
 target_compile_definitions(GuitarDSPReferenceTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(GuitarDSPReferenceTests PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
 
+# Offline measured-data calibration tools. They are intentionally not CTests so
+# the fast PR check never depends on external network data.
 juce_add_console_app(GuitarDSPJVMFit PRODUCT_NAME "GuitarDSP-JVM-Measured-Fit")
 juce_generate_juce_header(GuitarDSPJVMFit)
 target_sources(GuitarDSPJVMFit PRIVATE tests/JVMMeasuredFit.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/amp/JvmToneStack.cpp)
 target_include_directories(GuitarDSPJVMFit PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(GuitarDSPJVMFit PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(GuitarDSPJVMFit PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
+
+juce_add_console_app(GuitarDSPJVMPhysicalFit PRODUCT_NAME "GuitarDSP-JVM-Physical-Fit")
+juce_generate_juce_header(GuitarDSPJVMPhysicalFit)
+target_sources(GuitarDSPJVMPhysicalFit PRIVATE tests/JVMPhysicalFit.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/amp/JvmToneStack.cpp)
+target_include_directories(GuitarDSPJVMPhysicalFit PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(GuitarDSPJVMPhysicalFit PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(GuitarDSPJVMPhysicalFit PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
 
 add_dependencies(GuitarDSPDSPTests GuitarDSPPro)
 add_dependencies(GuitarDSPReferenceTests GuitarDSPPro)
@@ -75,4 +84,5 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(GuitarDSPDSPTests PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(GuitarDSPReferenceTests PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(GuitarDSPJVMFit PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(GuitarDSPJVMPhysicalFit PRIVATE -Wall -Wextra -Wpedantic)
 endif()
