@@ -132,7 +132,10 @@ public:
         StudioCompressor::Params q;
         q.thresholdDb=lerp(-10.0f,-36.0f,p.sustain); q.ratio=lerp(2.0f,8.0f,p.sustain);
         q.attackMs=lerp(1.0f,45.0f,p.attack); q.releaseMs=120.0f; q.kneeDb=9.0f;
-        q.makeupDb=lerp(1.0f,10.0f,p.sustain); q.mix=p.blend; q.rms=false;
+        // Keep the musical compressor behaviour, but do not add the old +1..+10 dB
+        // fixed pre-gain ahead of fuzz/high-gain amps. Explicit LEVEL is now the
+        // intentional output trim; this greatly reduces idle-noise pumping.
+        q.makeupDb=lerp(0.0f,3.0f,p.sustain); q.mix=p.blend; q.rms=false;
         q.autoRelease=true; q.autoMakeup=false; q.sidechainHpHz=55.0f;
         comp.setParameters(q);
     }
