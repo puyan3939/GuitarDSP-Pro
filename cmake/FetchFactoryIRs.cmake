@@ -2,45 +2,38 @@ if (NOT DEFINED GUITARDSP_FACTORY_IR_OUT OR NOT DEFINED GUITARDSP_FACTORY_IR_CAC
     message(FATAL_ERROR "Factory IR output/cache directories were not supplied")
 endif()
 
-set(_url "https://www.jester-dyne-productions.com/content/files/2023/04/JestersBrutalPack_1.0.zip")
-set(_sha "299dc053f01ebd1e980459adc48f9c6b8a8c7af91917b4f946512eefdbb311ea")
-set(_zip "${GUITARDSP_FACTORY_IR_CACHE}/JestersBrutalPack_1.0.zip")
-set(_extract "${GUITARDSP_FACTORY_IR_CACHE}/extracted")
-set(_source "${_extract}/Jesters_Brutal_Pack_1.0/Impulses/48kHz")
+# Jester Dyne's original host is occasionally unavailable via DNS. The same
+# 48 kHz / 24-bit / mono Brutal Pack captures are bundled by Darwin's Cat
+# OrbitCab under CC0. Pin an immutable Git commit so Factory IR builds do not
+# depend on the mutable state of another project.
+set(_orbitcab_commit "9081c0bdd84b325836d56aaebdb3955dbd9ccc0c")
+set(_url "https://github.com/darwinscat/orbitcab/archive/${_orbitcab_commit}.zip")
+set(_zip "${GUITARDSP_FACTORY_IR_CACHE}/orbitcab-${_orbitcab_commit}.zip")
+set(_extract "${GUITARDSP_FACTORY_IR_CACHE}/orbitcab-${_orbitcab_commit}")
+set(_source "${_extract}/orbitcab-${_orbitcab_commit}/resources/ir")
 
-set(_files
-    "1_Cookie_Monster.wav"
-    "2_Darth_Genocider.wav"
-    "3_Kitten_Slayer.wav"
-    "4_Kaiju_Tamer.wav"
-    "5_Iceburn_Suicide.wav"
-    "6_Vertical_Lip_Stabber.wav"
-    "7_Manslaughter_Joe.wav"
-    "8_Big_Bubba.wav"
-    "9_Devils_Cunnilingus.wav"
-    "10_October_32th.wav"
-    "11_Wumbo.wav"
-    "12_World_Collider.wav"
-    "13_Cannibal_Choir.wav"
-    "14_Cathode_Ray_Fleshburn.wav"
-    "15_Impaler_Jim.wav")
+set(_pairs
+    "01-cookie-monster.wav|1_Cookie_Monster.wav"
+    "02-darth-genocider.wav|2_Darth_Genocider.wav"
+    "03-kitten-slayer.wav|3_Kitten_Slayer.wav"
+    "04-kaiju-tamer.wav|4_Kaiju_Tamer.wav"
+    "05-iceburn-suicide.wav|5_Iceburn_Suicide.wav"
+    "06-vertical-lip-stabber.wav|6_Vertical_Lip_Stabber.wav"
+    "07-manslaughter-joe.wav|7_Manslaughter_Joe.wav"
+    "08-big-bubba.wav|8_Big_Bubba.wav"
+    "09-devils-cunnilingus.wav|9_Devils_Cunnilingus.wav"
+    "10-october-32th.wav|10_October_32th.wav"
+    "11-wumbo.wav|11_Wumbo.wav"
+    "12-world-collider.wav|12_World_Collider.wav"
+    "13-cannibal-choir.wav|13_Cannibal_Choir.wav"
+    "14-cathode-ray-fleshburn.wav|14_Cathode_Ray_Fleshburn.wav"
+    "15-impaler-jim.wav|15_Impaler_Jim.wav")
 
 file(MAKE_DIRECTORY "${GUITARDSP_FACTORY_IR_CACHE}")
 
-set(_need_download TRUE)
-if (EXISTS "${_zip}")
-    file(SHA256 "${_zip}" _existing_sha)
-    if ("${_existing_sha}" STREQUAL "${_sha}")
-        set(_need_download FALSE)
-    else()
-        file(REMOVE "${_zip}")
-    endif()
-endif()
-
-if (_need_download)
-    message(STATUS "Downloading measured Factory IR pack")
+if (NOT EXISTS "${_zip}")
+    message(STATUS "Downloading measured Factory IR source from pinned OrbitCab commit ${_orbitcab_commit}")
     file(DOWNLOAD "${_url}" "${_zip}"
-         EXPECTED_HASH "SHA256=${_sha}"
          STATUS _download_status
          TLS_VERIFY ON
          TIMEOUT 90
@@ -48,13 +41,21 @@ if (_need_download)
     list(GET _download_status 0 _download_code)
     if (NOT _download_code EQUAL 0)
         list(GET _download_status 1 _download_message)
-        message(FATAL_ERROR "Factory IR download failed: ${_download_message}. Reconfigure with -DGUITARDSP_FETCH_FACTORY_IRS=OFF for an offline build.")
+        file(REMOVE "${_zip}")
+        message(FATAL_ERROR "Factory IR GitHub download failed: ${_download_message}. Reconfigure with -DGUITARDSP_FETCH_FACTORY_IRS=OFF for an offline build.")
     endif()
 endif()
 
+# Record the archive digest in the build log for reproducibility. The source URL
+# itself is pinned to an immutable Git commit.
+file(SHA256 "${_zip}" _archive_sha256)
+message(STATUS "Factory IR pinned source archive SHA-256: ${_archive_sha256}")
+
 set(_need_extract FALSE)
-foreach(_name IN LISTS _files)
-    if (NOT EXISTS "${_source}/${_name}")
+foreach(_pair IN LISTS _pairs)
+    string(REPLACE "|" ";" _parts "${_pair}")
+    list(GET _parts 0 _src_name)
+    if (NOT EXISTS "${_source}/${_src_name}")
         set(_need_extract TRUE)
     endif()
 endforeach()
@@ -66,11 +67,14 @@ if (_need_extract)
 endif()
 
 file(MAKE_DIRECTORY "${GUITARDSP_FACTORY_IR_OUT}")
-foreach(_name IN LISTS _files)
-    if (NOT EXISTS "${_source}/${_name}")
-        message(FATAL_ERROR "Factory IR pack is missing expected capture: ${_name}")
+foreach(_pair IN LISTS _pairs)
+    string(REPLACE "|" ";" _parts "${_pair}")
+    list(GET _parts 0 _src_name)
+    list(GET _parts 1 _dst_name)
+    if (NOT EXISTS "${_source}/${_src_name}")
+        message(FATAL_ERROR "Pinned Factory IR source is missing expected capture: ${_src_name}")
     endif()
-    configure_file("${_source}/${_name}" "${GUITARDSP_FACTORY_IR_OUT}/${_name}" COPYONLY)
+    configure_file("${_source}/${_src_name}" "${GUITARDSP_FACTORY_IR_OUT}/${_dst_name}" COPYONLY)
 endforeach()
 
 set(_license "${CMAKE_CURRENT_LIST_DIR}/../assets/ir/FACTORY_IR_LICENSE.md")
