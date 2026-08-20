@@ -1,4 +1,62 @@
 #include "MainComponent.h"
+#include "../ui/SignalAnalyzerPanel.h"
+
+class MainComponent::AnalyzerWindow : public juce::DocumentWindow
+{
+public:
+    AnalyzerWindow(AudioEngine& engine, std::function<void()> onClosed)
+        : juce::DocumentWindow("DSP Analyzer",
+                               juce::Colour::fromRGB(10, 13, 18),
+                               juce::DocumentWindow::allButtons),
+          onClosedCallback(std::move(onClosed))
+    {
+        setUsingNativeTitleBar(true);
+        setResizable(true, true);
+        setResizeLimits(760, 480, 2400, 1600);
+
+        analyzerPanel = new SignalAnalyzerPanel(engine);
+        analyzerPanel->setAnalyzerActive(false);
+        setContentOwned(analyzerPanel, true);
+
+        centreWithSize(1180, 700);
+        setVisible(false);
+    }
+
+    ~AnalyzerWindow() override
+    {
+        if (analyzerPanel != nullptr)
+            analyzerPanel->setAnalyzerActive(false);
+    }
+
+    void showAnalyzer()
+    {
+        if (analyzerPanel != nullptr)
+            analyzerPanel->setAnalyzerActive(true);
+
+        setVisible(true);
+        toFront(true);
+    }
+
+    void hideAnalyzer()
+    {
+        if (analyzerPanel != nullptr)
+            analyzerPanel->setAnalyzerActive(false);
+
+        setVisible(false);
+
+        if (onClosedCallback)
+            onClosedCallback();
+    }
+
+    void closeButtonPressed() override
+    {
+        hideAnalyzer();
+    }
+
+private:
+    SignalAnalyzerPanel* analyzerPanel = nullptr;
+    std::function<void()> onClosedCallback;
+};
 
 MainComponent::MainComponent()
 {
@@ -7,29 +65,48 @@ MainComponent::MainComponent()
     setSize(1280, 720);
     addAndMakeVisible(mainView);
     addAndMakeVisible(analyzerButton);
-    addChildComponent(analyzerPanel);
-    analyzerPanel.setAnalyzerActive(false);
-    audioEngine.setLiveAnalyzerEnabled(false);
 
     analyzerButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(26, 31, 38));
     analyzerButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(222, 110, 58));
-    analyzerButton.setTooltip("Open dual oscilloscope / FFT analyzer");
-    analyzerButton.onClick = [this]
-    {
-        const bool shouldShow = !analyzerPanel.isVisible();
-        analyzerPanel.setVisible(shouldShow);
-        analyzerPanel.setAnalyzerActive(shouldShow);
-        audioEngine.setLiveAnalyzerEnabled(shouldShow);
-        analyzerButton.setButtonText(shouldShow ? "CLOSE ANALYZER" : "ANALYZER");
-        analyzerPanel.toFront(false);
-        analyzerButton.toFront(false);
-        resized();
-    };
+    analyzerButton.setTooltip("Open dual oscilloscope / FFT analyzer in a separate window");
+    analyzerButton.onClick = [this] { toggleAnalyzerWindow(); };
+
+    audioEngine.setLiveAnalyzerEnabled(false);
 }
 
 MainComponent::~MainComponent()
 {
+    analyzerWindow.reset();
     audioEngine.shutdown();
+}
+
+void MainComponent::toggleAnalyzerWindow()
+{
+    const bool shouldShow = analyzerWindow == nullptr || !analyzerWindow->isVisible();
+    setAnalyzerWindowVisible(shouldShow);
+}
+
+void MainComponent::setAnalyzerWindowVisible(bool shouldShow)
+{
+    if (shouldShow)
+    {
+        if (analyzerWindow == nullptr)
+        {
+            analyzerWindow = std::make_unique<AnalyzerWindow>(audioEngine, [this]
+            {
+                audioEngine.setLiveAnalyzerEnabled(false);
+                analyzerButton.setButtonText("ANALYZER");
+            });
+        }
+
+        audioEngine.setLiveAnalyzerEnabled(true);
+        analyzerWindow->showAnalyzer();
+        analyzerButton.setButtonText("CLOSE ANALYZER");
+    }
+    else if (analyzerWindow != nullptr)
+    {
+        analyzerWindow->hideAnalyzer();
+    }
 }
 
 void MainComponent::paint(juce::Graphics& g)
@@ -41,31 +118,14 @@ void MainComponent::resized()
 {
     mainView.setBounds(getLocalBounds());
 
-    constexpr int panelHeight = 360;
     constexpr int buttonWidth = 126;
     constexpr int buttonHeight = 28;
     constexpr int margin = 10;
 
-    if (analyzerPanel.isVisible())
-    {
-        analyzerPanel.setBounds(margin,
-                                juce::jmax(margin, getHeight() - panelHeight - margin),
-                                juce::jmax(200, getWidth() - margin * 2),
-                                juce::jmin(panelHeight, getHeight() - margin * 2));
-        analyzerButton.setBounds(getWidth() - buttonWidth - margin,
-                                 juce::jmax(margin, analyzerPanel.getY() - buttonHeight - 5),
-                                 buttonWidth,
-                                 buttonHeight);
-    }
-    else
-    {
-        analyzerButton.setBounds(getWidth() - buttonWidth - margin,
-                                 getHeight() - buttonHeight - margin,
-                                 buttonWidth,
-                                 buttonHeight);
-    }
-
-    analyzerPanel.toFront(false);
+    analyzerButton.setBounds(getWidth() - buttonWidth - margin,
+                             getHeight() - buttonHeight - margin,
+                             buttonWidth,
+                             buttonHeight);
     analyzerButton.toFront(false);
 }
 
