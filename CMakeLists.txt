@@ -44,18 +44,28 @@ juce_generate_juce_header(GuitarDSPDSPTests)
 target_sources(GuitarDSPDSPTests PRIVATE tests/DSPCharacterSmoke.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/HQEffectsRack.cpp hq_preload/dsp/cab/CabMicEngineHQ.cpp)
 target_include_directories(GuitarDSPDSPTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(GuitarDSPDSPTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
-target_link_libraries(GuitarDSPDSPTests PRIVATE juce::juce_dsp juce::juce_audio_basics)
+target_link_libraries(GuitarDSPDSPTests PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
 
-# PR validation: the fast test target also compiles the GUI app so analyzer/UI changes
-# cannot pass CI without a full C++ compile. This dependency is build-only; tests stay unchanged.
+juce_add_console_app(GuitarDSPReferenceTests PRODUCT_NAME "GuitarDSP-Reference-IR-Tests")
+juce_generate_juce_header(GuitarDSPReferenceTests)
+target_sources(GuitarDSPReferenceTests PRIVATE tests/ReferenceAndIrSmoke.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/cab/CabMicEngineHQ.cpp)
+target_include_directories(GuitarDSPReferenceTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(GuitarDSPReferenceTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(GuitarDSPReferenceTests PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
+
+# PR/push validation: the fast test targets also compile the GUI app so analyzer/UI
+# changes cannot pass CI without a full C++ compile. Tests themselves remain headless.
 add_dependencies(GuitarDSPDSPTests GuitarDSPPro)
+add_dependencies(GuitarDSPReferenceTests GuitarDSPPro)
 
 include(CTest)
 if (BUILD_TESTING)
     add_test(NAME hq_dsp_smoke COMMAND GuitarDSPDSPTests)
+    add_test(NAME reference_ir_smoke COMMAND GuitarDSPReferenceTests)
 endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(GuitarDSPPro PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(GuitarDSPDSPTests PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(GuitarDSPReferenceTests PRIVATE -Wall -Wextra -Wpedantic)
 endif()

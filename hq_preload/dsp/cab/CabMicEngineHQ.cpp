@@ -45,6 +45,7 @@ void CabMicEngineHQ::reset()
 void CabMicEngineHQ::setParameters(const CabMicParams& p)
 {
     const bool irChanged = p.irEngine != params.irEngine || p.cab != params.cab || p.mic != params.mic
+                        || p.externalIrSize != params.externalIrSize
                         || std::abs(p.position - params.position) > 1.0e-5f
                         || std::abs(p.distance - params.distance) > 1.0e-5f
                         || std::abs(p.resonance - params.resonance) > 1.0e-5f;
@@ -54,9 +55,44 @@ void CabMicEngineHQ::setParameters(const CabMicParams& p)
     params.resonance = juce::jlimit(0.0f, 1.0f, params.resonance);
     params.mix = juce::jlimit(0.0f, 1.0f, params.mix);
     params.lowVolumeFeel = juce::jlimit(0.0f, 1.0f, params.lowVolumeFeel);
+    params.irLevelDb = juce::jlimit(-24.0f, 12.0f, params.irLevelDb);
     updateFilters();
     updateFeelFilters();
     if (convolution[0] && irChanged) rebuildImpulse();
+}
+
+bool CabMicEngineHQ::loadExternalImpulse(const juce::File& file)
+{
+    if (!file.existsAsFile()) return false;
+
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+    if (!reader || reader->lengthInSamples <= 0 || reader->numChannels == 0)
+        return false;
+
+    externalIrFile = file;
+    params.irEngine = CabIrEngine::external;
+    if (convolution[0]) rebuildImpulse();
+    return true;
+}
+
+void CabMicEngineHQ::clearExternalImpulse()
+{
+    externalIrFile = {};
+    if (params.irEngine == CabIrEngine::external && convolution[0])
+        rebuildImpulse();
+}
+
+size_t CabMicEngineHQ::externalIrTargetSize() const noexcept
+{
+    switch (params.externalIrSize)
+    {
+        case ExternalIrSize::samples1024: return 1024;
+        case ExternalIrSize::samples2048: return 2048;
+        case ExternalIrSize::full:        return 0;
+    }
+    return 2048;
 }
 
 void CabMicEngineHQ::updateFilters()
@@ -255,14 +291,35 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
     return ir;
 }
 
+juce::AudioBuffer<float> CabMicEngineHQ::makeBypassImpulse() const
+{
+    juce::AudioBuffer<float> ir(1, 1);
+    ir.clear();
+    ir.setSample(0, 0, 1.0f);
+    return ir;
+}
+
 juce::AudioBuffer<float> CabMicEngineHQ::makeImpulse() const
 {
-    return params.irEngine == CabIrEngine::advanced ? makeAdvancedImpulse()
-                                                     : makeClassicImpulse();
+    if (params.irEngine == CabIrEngine::advanced) return makeAdvancedImpulse();
+    if (params.irEngine == CabIrEngine::classic) return makeClassicImpulse();
+    return makeBypassImpulse();
 }
 
 void CabMicEngineHQ::rebuildImpulse()
 {
+    if (params.irEngine == CabIrEngine::external && hasExternalImpulse())
+    {
+        const auto targetSize = externalIrTargetSize();
+        for (int ch = 0; ch < 2; ++ch)
+            convolution[(size_t)ch]->loadImpulseResponse(externalIrFile,
+                juce::dsp::Convolution::Stereo::no,
+                juce::dsp::Convolution::Trim::no,
+                targetSize,
+                juce::dsp::Convolution::Normalise::yes);
+        return;
+    }
+
     for (int ch = 0; ch < 2; ++ch)
     {
         auto ir = makeImpulse();
@@ -281,6 +338,7 @@ void CabMicEngineHQ::process(juce::AudioBuffer<float>& buffer, int startSample, 
     if (numSamples > work.getNumSamples()) return;
 
     const float feel = juce::jlimit(0.0f, 1.0f, params.lowVolumeFeel);
+    const float irGain = dbToGain(params.irLevelDb) * (params.polarityInvert ? -1.0f : 1.0f);
     for (int ch = 0; ch < channels; ++ch)
     {
         work.copyFrom(0, 0, buffer, ch, startSample, numSamples);
@@ -293,7 +351,8 @@ void CabMicEngineHQ::process(juce::AudioBuffer<float>& buffer, int startSample, 
         const auto* dryData = dryWork.getReadPointer(0);
         for (int i = 0; i < numSamples; ++i)
         {
-            const float cabSignal = highCut[(size_t)ch].process(lowCut[(size_t)ch].process(wet[i]));
+            float cabSignal = highCut[(size_t)ch].process(lowCut[(size_t)ch].process(wet[i]));
+            cabSignal *= irGain;
             float y = lerp(dryData[i], cabSignal, params.mix);
             if (feel > 0.0001f)
             {

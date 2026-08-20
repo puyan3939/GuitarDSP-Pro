@@ -41,6 +41,56 @@ static AmpHQParams defaults()
     return p;
 }
 
+AmpHQParams AmpEngineHQ::makeBassman5F6AReference()
+{
+    AmpHQParams p = defaults();
+
+    // A low-drive tanh followed by reciprocal gain is used as an approximately
+    // linear buffer for topology slots that are not active stages in the 5F6-A.
+    // This lets the fixed 20-slot engine represent a much shorter real circuit
+    // without changing the existing generic HQ voicing.
+    for (auto& s : p.stage)
+        s = { 20.0f, 18000.0f, 0.25f, 0.0f, 0.0f, 0.0f, 18000.0f, 4.0f };
+
+    // Input / 12AY7-like first voltage stage: lower gain and softer asymmetric onset.
+    p.stage[0] = { 32.0f, 14500.0f, 0.82f, 0.006f, 0.12f, 0.045f, 11200.0f, 1.70f };
+    // Interstage coupling and second voltage stage.
+    p.stage[1] = { 48.0f, 16000.0f, 0.25f, 0.0f, 0.0f, 0.0f, 15500.0f, 4.0f };
+    p.stage[2] = { 42.0f, 13200.0f, 1.32f, 0.010f, 0.18f, 0.070f, 9800.0f, 1.08f };
+    // DC-coupled cathode-follower approximation: near-unity, high headroom, low distortion.
+    p.stage[3] = { 24.0f, 17000.0f, 0.30f, 0.002f, 0.04f, 0.025f, 16000.0f, 3.22f };
+
+    // Approximate the characteristic Bassman tone-stack contour at noon: broad
+    // low/treble recovery surrounding a clearly recessed mid band.
+    p.bassDb = 3.4f;
+    p.midDb = -8.6f;
+    p.trebleDb = 4.2f;
+    p.stage[10] = { 28.0f, 17500.0f, 0.25f, 0.0f, 0.0f, 0.0f, 17000.0f, 3.35f };
+
+    // Recovery / phase-inverter drive. The engine's PI already models unequal
+    // positive/negative paths, so only moderate additional asymmetry is needed here.
+    p.stage[11] = { 45.0f, 14500.0f, 0.78f, 0.006f, 0.10f, 0.045f, 11800.0f, 1.45f };
+    p.stage[12] = { 28.0f, 17500.0f, 0.25f, 0.0f, 0.0f, 0.0f, 17000.0f, 4.0f };
+    p.stage[13] = { 32.0f, 16500.0f, 0.25f, 0.0f, 0.0f, 0.0f, 16000.0f, 4.0f };
+    p.stage[14] = { 34.0f, 14000.0f, 1.10f, 0.008f, 0.16f, 0.080f, 10800.0f, 1.02f };
+
+    // Fixed-bias 6L6/5881-style power section: moderate NFB, noticeable rectifier
+    // sag and bias excursion, but less transformer saturation than the generic model.
+    p.stage[16] = { 38.0f, 14500.0f, 0.42f, 0.0f, 0.03f, 0.020f, 13200.0f, 2.35f };
+    p.stage[17] = { 48.0f, 11800.0f, 1.78f, 0.018f, 0.22f, 0.16f, 7800.0f, 0.92f };
+    p.stage[18] = { 24.0f, 17500.0f, 0.25f, 0.0f, 0.0f, 0.0f, 17000.0f, 4.0f };
+    p.stage[19] = { 30.0f, 8200.0f, 0.42f, 0.002f, 0.05f, 0.025f, 7600.0f, 2.20f };
+
+    p.sag = 0.36f;
+    p.sagRecoveryMs = 125.0f;
+    p.damping = 0.52f;
+    p.presence = 0.34f;
+    p.biasExcursion = 0.18f;
+    p.transformerSaturation = 0.20f;
+    p.outputDb = -10.5f;
+    return p;
+}
+
 // 16x internal processing at 48 kHz = 768 kHz. This is intentionally
 // aggressive for a quality A/B test; revert to 8x if the audible benefit
 // does not justify the realtime CPU cost.

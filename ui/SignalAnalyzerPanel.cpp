@@ -67,6 +67,15 @@ SignalAnalyzerPanel::SignalAnalyzerPanel(AudioEngine& engine)
     timeSelector.addItem("50 ms", 4);
     timeSelector.setSelectedId(3, juce::dontSendNotification);
 
+    ampReferenceLabel.setText("HQ REF", juce::dontSendNotification);
+    ampReferenceLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(165, 174, 184));
+    ampReferenceSelector.addItem("CURRENT", 1);
+    ampReferenceSelector.addItem("5F6-A REF", 2);
+    ampReferenceSelector.setSelectedId(1, juce::dontSendNotification);
+    ampReferenceSelector.setTooltip("Loads a circuit-derived 5F6-A HQ reference. Select HQ 20 in the main window to hear/analyse it. Switching back restores the captured custom HQ parameters.");
+    customAmpSnapshot = audioEngine.getHQAmpEngine().getParameters();
+    customAmpSnapshotValid = true;
+
     frequencySlider.setSliderStyle(juce::Slider::LinearHorizontal);
     frequencySlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 76, 22);
     frequencySlider.setRange(20.0, 5000.0, 1.0);
@@ -92,7 +101,8 @@ SignalAnalyzerPanel::SignalAnalyzerPanel(AudioEngine& engine)
                              static_cast<juce::Component*>(&timeSelector), static_cast<juce::Component*>(&frequencySlider),
                              static_cast<juce::Component*>(&levelSlider), static_cast<juce::Component*>(&holdButton),
                              static_cast<juce::Component*>(&frequencyLabel), static_cast<juce::Component*>(&levelLabel),
-                             static_cast<juce::Component*>(&sweepLabel) })
+                             static_cast<juce::Component*>(&sweepLabel), static_cast<juce::Component*>(&ampReferenceLabel),
+                             static_cast<juce::Component*>(&ampReferenceSelector) })
         addAndMakeVisible(component);
 
     modeSelector.onChange = [this] { refreshControlVisibility(); updateData(); repaint(); };
@@ -100,6 +110,7 @@ SignalAnalyzerPanel::SignalAnalyzerPanel(AudioEngine& engine)
     sourceASelector.onChange = [this] { updateData(); repaint(); };
     sourceBSelector.onChange = [this] { updateData(); repaint(); };
     timeSelector.onChange = [this] { updateData(); repaint(); };
+    ampReferenceSelector.onChange = [this] { applyAmpReference(); };
     frequencySlider.onValueChange = [this] { if (modeSelector.getSelectedId() == 2) updateData(); };
     levelSlider.onValueChange = [this] { if (modeSelector.getSelectedId() != 1) updateData(); };
 
@@ -110,6 +121,28 @@ SignalAnalyzerPanel::SignalAnalyzerPanel(AudioEngine& engine)
 SignalAnalyzerPanel::~SignalAnalyzerPanel()
 {
     stopTimer();
+}
+
+void SignalAnalyzerPanel::applyAmpReference()
+{
+    auto& amp = audioEngine.getHQAmpEngine();
+    if (ampReferenceSelector.getSelectedId() == 2)
+    {
+        if (!referenceApplied)
+        {
+            customAmpSnapshot = amp.getParameters();
+            customAmpSnapshotValid = true;
+        }
+        amp.setParameters(guitardsp::hq::AmpEngineHQ::makeBassman5F6AReference());
+        referenceApplied = true;
+    }
+    else if (referenceApplied && customAmpSnapshotValid)
+    {
+        amp.setParameters(customAmpSnapshot);
+        referenceApplied = false;
+    }
+    updateData();
+    repaint();
 }
 
 void SignalAnalyzerPanel::refreshControlVisibility()
@@ -450,18 +483,20 @@ void SignalAnalyzerPanel::resized()
 {
     auto r = getLocalBounds().reduced(10);
     auto top = r.removeFromTop(30);
-    titleLabel.setBounds(top.removeFromLeft(145));
-    modeSelector.setBounds(top.removeFromLeft(90).reduced(2, 2));
-    viewSelector.setBounds(top.removeFromLeft(74).reduced(2, 2));
-    scaleSelector.setBounds(top.removeFromLeft(92).reduced(2, 2));
-    timeSelector.setBounds(top.removeFromLeft(80).reduced(2, 2));
-    holdButton.setBounds(top.removeFromLeft(72).reduced(3, 2));
+    titleLabel.setBounds(top.removeFromLeft(130));
+    modeSelector.setBounds(top.removeFromLeft(74).reduced(2, 2));
+    viewSelector.setBounds(top.removeFromLeft(62).reduced(2, 2));
+    scaleSelector.setBounds(top.removeFromLeft(78).reduced(2, 2));
+    timeSelector.setBounds(top.removeFromLeft(70).reduced(2, 2));
+    holdButton.setBounds(top.removeFromLeft(60).reduced(3, 2));
+    ampReferenceLabel.setBounds(top.removeFromLeft(48));
+    ampReferenceSelector.setBounds(top.removeFromLeft(128).reduced(2, 2));
 
     auto generator = top;
-    frequencyLabel.setBounds(generator.removeFromLeft(42));
-    frequencySlider.setBounds(generator.removeFromLeft(190));
-    levelLabel.setBounds(generator.removeFromLeft(44));
-    levelSlider.setBounds(generator.removeFromLeft(175));
+    frequencyLabel.setBounds(generator.removeFromLeft(38));
+    frequencySlider.setBounds(generator.removeFromLeft(165));
+    levelLabel.setBounds(generator.removeFromLeft(40));
+    levelSlider.setBounds(generator.removeFromLeft(145));
     sweepLabel.setBounds(generator);
 
     r.removeFromTop(5);

@@ -32,6 +32,10 @@ public:
     const AmpHQParams& getParameters() const noexcept { return params; }
     void process(juce::AudioBuffer<float>& mono);
 
+    // Circuit-derived reference voicing. This is a calibrated model target, not a
+    // claim of measurement-matching any individual vintage amplifier specimen.
+    static AmpHQParams makeBassman5F6AReference();
+
 private:
     struct TubeStage;
     struct Channel;

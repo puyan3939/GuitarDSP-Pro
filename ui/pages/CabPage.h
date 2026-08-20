@@ -13,6 +13,7 @@ public:
         const auto& p=cab.getParameters();
         enabled.setToggleState(cab.isEnabled(),juce::dontSendNotification);
         irEngine.setSelectedId((int)p.irEngine+1,juce::dontSendNotification);
+        irSize.setSelectedId((int)p.externalIrSize+1,juce::dontSendNotification);
         cabType.setSelectedId((int)p.cab+1,juce::dontSendNotification);
         micType.setSelectedId((int)p.mic+1,juce::dontSendNotification);
         position.setValue(p.position,juce::dontSendNotification);
@@ -22,14 +23,24 @@ public:
         highCut.setValue(p.highCutHz,juce::dontSendNotification);
         mix.setValue(p.mix,juce::dontSendNotification);
         lowVolumeFeel.setValue(p.lowVolumeFeel,juce::dontSendNotification);
+        irLevelDb.setValue(p.irLevelDb,juce::dontSendNotification);
+        polarityInvert.setToggleState(p.polarityInvert,juce::dontSendNotification);
+        updateExternalControls();
+        updateInfo();
     }
 
 private:
     void push();
     void updateInfo();
+    void updateExternalControls();
+    void chooseExternalIr();
+
     guitardsp::hq::CabMicEngineHQ& cab;
-    juce::Label title, info;
+    juce::Label title, info, irName;
     juce::ToggleButton enabled { "CAB / MIC ON" };
-    juce::ComboBox irEngine, cabType, micType;
-    juce::Slider position, distance, resonance, lowCut, highCut, mix, lowVolumeFeel;
+    juce::ToggleButton polarityInvert { "INVERT" };
+    juce::ComboBox irEngine, irSize, cabType, micType;
+    juce::TextButton loadIrButton { "LOAD IR" };
+    juce::Slider position, distance, resonance, lowCut, highCut, mix, lowVolumeFeel, irLevelDb;
+    std::unique_ptr<juce::FileChooser> irChooser;
 };

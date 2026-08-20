@@ -45,7 +45,7 @@ jobs:
           ref: 9.0.0
           path: _deps/JUCE
           fetch-depth: 1
-      - name: Configure DSP test target
+      - name: Configure DSP test targets
         env:
           CC: gcc
           CXX: g++
@@ -57,10 +57,10 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DGUITARDSP_JUCE_PATH="${{ github.workspace }}/_deps/JUCE"
-      - name: Build DSP tests only
-        run: cmake --build build --target GuitarDSPDSPTests --parallel 4
+      - name: Build DSP and reference tests
+        run: cmake --build build --target GuitarDSPDSPTests GuitarDSPReferenceTests --parallel 4
       - name: Run DSP smoke tests
-        run: ctest --test-dir build --output-on-failure -R hq_dsp_smoke
+        run: ctest --test-dir build --output-on-failure
       - name: Compiler cache stats
         if: always()
         run: ccache --show-stats || true
