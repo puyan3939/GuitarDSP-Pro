@@ -33,6 +33,7 @@ private:
     juce::ComboBox slotSelector;
     juce::ComboBox modelSelector;
     juce::ToggleButton enabledButton { "ON" };
+    juce::ToggleButton routeMain { "MAIN" }, routeClean { "CLEAN" }, routeSub { "SUB" };
 
     juce::Label dynamicsTitle, dynamicsHint, grLabel;
     juce::ComboBox dynamicsMode;

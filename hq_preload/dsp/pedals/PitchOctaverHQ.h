@@ -9,10 +9,6 @@ namespace guitardsp::hq
 // Fixed-octave, dual-head granular pitch shifter. This is intentionally separate
 // from the nonlinear Octave Fuzz: it preserves the input waveform and creates
 // clean +/-1 octave voices with overlapping Hann windows and cubic interpolation.
-//
-// The external rig can remain at 48 kHz while this pitch core runs at 16x
-// (768 kHz at a 48 kHz device rate). This improves moving-read-head interpolation
-// and pushes resampling images far above the final audio Nyquist frequency.
 class PitchOctaverHQ
 {
 public:
@@ -21,27 +17,24 @@ public:
         float octaveUp = 0.65f;
         float octaveDown = 0.0f;
         float dry = 0.65f;
-        float tracking = 0.45f; // 0 = short/tight window, 1 = long/smooth
+        float tracking = 0.45f;
         float tone = 0.72f;
         float smooth = 0.55f;
     };
 
-    PitchOctaverHQ() : oversampling(4) {} // 16x internal pitch rate
+    PitchOctaverHQ() : oversampling(4) {}
 
     void prepare(double sampleRate, int maximumBlockSize)
     {
         externalFs = sampleRate;
         oversampling.prepare(sampleRate, maximumBlockSize);
         fs = oversampling.getInternalSampleRate();
-
-        // Keep the delay memory duration constant in seconds at the 16x rate.
         const int wanted = juce::jmax(8192,
             (int)std::ceil(fs * 0.18) + maximumBlockSize * oversampling.getFactor() + 32);
         int size = 1;
         while (size < wanted) size <<= 1;
         buffer.assign((size_t)size, 0.0f);
         mask = size - 1;
-
         toneLP.prepare(fs);
         dcBlock.prepare(fs);
         reset();
@@ -80,39 +73,35 @@ public:
     int getInternalFactor() const noexcept { return oversampling.getFactor(); }
     double getInternalSampleRate() const noexcept { return fs; }
 
+    // Approximate centre-of-window delay referred back to the external sample rate.
+    // Used only for parallel-path alignment; it does not alter the pitch algorithm.
+    float getEstimatedLatencySamples(float tracking) const noexcept
+    {
+        const float windowMs = lerp(18.0f, 56.0f, juce::jlimit(0.0f, 1.0f, tracking));
+        const float granular = 0.5f * 0.001f * windowMs * (float)externalFs;
+        return granular + oversampling.getLatencySamples();
+    }
+
 private:
     float processInternal(float input) noexcept
     {
         buffer[(size_t)(writeIndex & mask)] = input;
-
-        // Window duration is defined in milliseconds, so increasing the internal
-        // sample rate improves time resolution without changing playing feel.
         const float windowMs = lerp(18.0f, 56.0f, params.tracking);
         const float windowSamples = juce::jlimit(96.0f, (float)buffer.size() * 0.32f,
                                                  0.001f * windowMs * (float)fs);
         const float minDelay = 12.0f + 0.004f * (float)fs;
-
         const float up = renderVoice(2.0f, upPhase, windowSamples, minDelay);
         const float down = renderVoice(0.5f, downPhase, windowSamples, minDelay);
-
         const float shifted = params.octaveUp * up + params.octaveDown * down;
         const float normaliser = 1.0f / juce::jmax(1.0f, params.dry + params.octaveUp + params.octaveDown);
         float y = (params.dry * input + shifted) * normaliser;
-
-        // This filter also runs at the 16x rate; the oversampler's downsampling
-        // filters provide the final anti-imaging/anti-alias protection at 48 kHz.
         const float filtered = toneLP.process(y);
         y = lerp(y, filtered, 0.25f + 0.70f * params.smooth);
         ++writeIndex;
         return dcBlock.process(y);
     }
 
-    static float wrap01(float p) noexcept
-    {
-        p -= std::floor(p);
-        return p;
-    }
-
+    static float wrap01(float p) noexcept { p -= std::floor(p); return p; }
     static float hann(float phase) noexcept
     {
         const float s = std::sin(juce::MathConstants<float>::pi * phase);
@@ -138,22 +127,15 @@ private:
         const float phaseB = wrap01(phase + 0.5f);
         auto delayFor = [ratio, windowSamples, minDelay](float p) noexcept
         {
-            // read-rate = 1 - d(delay)/dn. Up-octave uses decreasing delay;
-            // down-octave uses increasing delay.
             return ratio >= 1.0f ? minDelay + windowSamples * (1.0f - p)
                                  : minDelay + windowSamples * p;
         };
-
-        const float dA = delayFor(phase);
-        const float dB = delayFor(phaseB);
-        const float a = readCubic((float)writeIndex - dA);
-        const float b = readCubic((float)writeIndex - dB);
+        const float a = readCubic((float)writeIndex - delayFor(phase));
+        const float b = readCubic((float)writeIndex - delayFor(phaseB));
         const float wA = hann(phase);
         const float wB = hann(phaseB);
         const float y = (a * wA + b * wB) / juce::jmax(1.0e-5f, wA + wB);
-
-        const float phaseInc = std::abs(1.0f - ratio) / windowSamples;
-        phase = wrap01(phase + phaseInc);
+        phase = wrap01(phase + std::abs(1.0f - ratio) / windowSamples);
         return y;
     }
 

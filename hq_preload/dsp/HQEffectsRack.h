@@ -10,6 +10,7 @@
 #include "modulation/ModulationHQ.h"
 #include "delay/DelayHQ.h"
 #include "reverb/ReverbHQ.h"
+#include "routing/ParallelRigHQ.h"
 
 namespace guitardsp::hq {
 
@@ -17,10 +18,18 @@ class HQEffectsRack {
 public:
     static constexpr int pedalSlots = 4;
     static constexpr int stereoChannels = 2;
+    static constexpr int routeMain = 1;
+    static constexpr int routeClean = 2;
+    static constexpr int routeSub = 4;
     enum class DynamicsMode { off, gate, studioCompressor, guitarCompressor };
     enum class ModulationMode { off, chorus, flanger, phaser, tremolo, vibrato };
 
-    struct PedalSlotControl { std::atomic<bool> enabled{false}; std::atomic<int> model{(int)PedalType::midOD}; std::atomic<float> drive{0.5f}, tone{0.5f}, levelDb{0.0f}, mix{1.0f}, aux1{0.5f}, aux2{0.5f}, aux3{0.5f}; };
+    struct PedalSlotControl {
+        std::atomic<bool> enabled{false};
+        std::atomic<int> model{(int)PedalType::midOD};
+        std::atomic<float> drive{0.5f}, tone{0.5f}, levelDb{0.0f}, mix{1.0f}, aux1{0.5f}, aux2{0.5f}, aux3{0.5f};
+        std::atomic<int> routeMask{routeMain};
+    };
     struct GateControl { std::atomic<float> thresholdDb{-55}, rangeDb{-60}, ratio{4}, attackMs{1}, holdMs{35}, releaseMs{180}, hysteresisDb{4}, sidechainHpHz{55}, sidechainLpHz{6500}; };
     struct StudioCompControl {
         std::atomic<float> thresholdDb{-18}, ratio{4}, attackMs{10}, releaseMs{120}, kneeDb{6}, makeupDb{0}, mix{1}, sidechainHpHz{70};
@@ -31,24 +40,48 @@ public:
     struct DelayControl { std::atomic<int> flavor{(int)DelayType::digital}; std::atomic<float> timeMs{380}, feedback{.35f}, mix{.28f}, lowCutHz{80}, highCutHz{6500}, drive{.1f}, wow{.15f}, flutter{.08f}, age{.2f}; };
     struct ReverbControl { std::atomic<int> flavor{(int)ReverbType::room}; std::atomic<float> size{.55f}, decay{.55f}, damping{.5f}, preDelayMs{18}, mix{.22f}, mod{.15f}, drip{.35f}; };
 
-    void prepare(double sampleRate, int maximumBlockSize); void reset();
-    void processPreAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples); void processPostAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
+    void prepare(double sampleRate, int maximumBlockSize);
+    void reset();
+    void processPreAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
+    void processPedalRoute(juce::AudioBuffer<float>& buffer, int startSample, int numSamples, int routeBit);
+    void processPostAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
+
     PedalSlotControl& pedalSlot(int index) noexcept { return pedalControls[(size_t)juce::jlimit(0, pedalSlots - 1, index)]; }
-    GateControl& gateControl() noexcept { return gateControls; } StudioCompControl& studioCompControl() noexcept { return studioControls; } GuitarCompControl& guitarCompControl() noexcept { return guitarControls; }
-    ModulationControl& modulationControl() noexcept { return modControls; } DelayControl& delayControl() noexcept { return delayControls; } ReverbControl& reverbControl() noexcept { return reverbControls; }
-    void setDynamicsMode(DynamicsMode m) noexcept { dynamicsMode.store((int)m); } DynamicsMode getDynamicsMode() const noexcept { return (DynamicsMode)dynamicsMode.load(); }
+    GateControl& gateControl() noexcept { return gateControls; }
+    StudioCompControl& studioCompControl() noexcept { return studioControls; }
+    GuitarCompControl& guitarCompControl() noexcept { return guitarControls; }
+    ModulationControl& modulationControl() noexcept { return modControls; }
+    DelayControl& delayControl() noexcept { return delayControls; }
+    ReverbControl& reverbControl() noexcept { return reverbControls; }
+    ParallelRigControl& parallelRigControl() noexcept { return parallelControls; }
+    const ParallelRigControl& parallelRigControl() const noexcept { return parallelControls; }
+
+    void setDynamicsMode(DynamicsMode m) noexcept { dynamicsMode.store((int)m); }
+    DynamicsMode getDynamicsMode() const noexcept { return (DynamicsMode)dynamicsMode.load(); }
     float getCompressorGainReductionDb() const noexcept { return compressorGainReductionDb.load(std::memory_order_relaxed); }
-    void setModulationMode(ModulationMode m) noexcept { modulationMode.store((int)m); } ModulationMode getModulationMode() const noexcept { return (ModulationMode)modulationMode.load(); }
-    void setDelayEnabled(bool e) noexcept { delayEnabled.store(e); } bool isDelayEnabled() const noexcept { return delayEnabled.load(); }
-    void setReverbEnabled(bool e) noexcept { reverbEnabled.store(e); } bool isReverbEnabled() const noexcept { return reverbEnabled.load(); }
+    void setModulationMode(ModulationMode m) noexcept { modulationMode.store((int)m); }
+    ModulationMode getModulationMode() const noexcept { return (ModulationMode)modulationMode.load(); }
+    void setDelayEnabled(bool e) noexcept { delayEnabled.store(e); }
+    bool isDelayEnabled() const noexcept { return delayEnabled.load(); }
+    void setReverbEnabled(bool e) noexcept { reverbEnabled.store(e); }
+    bool isReverbEnabled() const noexcept { return reverbEnabled.load(); }
 
 private:
-    void applyDynamics(juce::AudioBuffer<float>&,int,int); void applyModulation(juce::AudioBuffer<float>&,int,int); void updateDynamicParameters(); void updatePostParameters();
-    std::array<std::array<PedalEngineHQ,pedalSlots>,stereoChannels> pedals; std::array<PedalSlotControl,pedalSlots> pedalControls;
-    std::array<NoiseGate,stereoChannels> noiseGate; std::array<StudioCompressor,stereoChannels> studioComp; std::array<GuitarCompressor,stereoChannels> guitarComp;
+    static int routeIndex(int routeBit) noexcept { return routeBit==routeClean ? 1 : routeBit==routeSub ? 2 : 0; }
+    void applyDynamics(juce::AudioBuffer<float>&,int,int);
+    void applyModulation(juce::AudioBuffer<float>&,int,int);
+    void updateDynamicParameters();
+    void updatePostParameters();
+    void processRoutePedals(juce::AudioBuffer<float>& buffer, int startSample, int numSamples, int routeBit, bool includeDynamics);
+
+    std::array<std::array<std::array<PedalEngineHQ,pedalSlots>,stereoChannels>,3> routePedals;
+    std::array<PedalSlotControl,pedalSlots> pedalControls;
+    std::array<NoiseGate,stereoChannels> noiseGate;
+    std::array<StudioCompressor,stereoChannels> studioComp;
+    std::array<GuitarCompressor,stereoChannels> guitarComp;
     GateControl gateControls; StudioCompControl studioControls; GuitarCompControl guitarControls;
     std::array<ChorusHQ,stereoChannels> chorus; std::array<FlangerHQ,stereoChannels> flanger; std::array<PhaserHQ,stereoChannels> phaser; std::array<TremoloHQ,stereoChannels> tremolo; std::array<VibratoHQ,stereoChannels> vibrato; ModulationControl modControls;
-    std::array<DelayHQ,stereoChannels> delayFx; std::array<ReverbHQ,stereoChannels> reverbFx; DelayControl delayControls; ReverbControl reverbControls;
+    std::array<DelayHQ,stereoChannels> delayFx; std::array<ReverbHQ,stereoChannels> reverbFx; DelayControl delayControls; ReverbControl reverbControls; ParallelRigControl parallelControls;
     juce::AudioBuffer<float> pedalMonoWork, gateCleanKey; int preparedMaxBlock=0;
     std::atomic<int> dynamicsMode{(int)DynamicsMode::off}, modulationMode{(int)ModulationMode::off}; std::atomic<bool> delayEnabled{false}, reverbEnabled{false}; std::atomic<float> compressorGainReductionDb{0.0f};
 };
