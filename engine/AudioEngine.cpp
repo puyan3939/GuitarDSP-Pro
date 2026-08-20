@@ -1,6 +1,19 @@
 #include "AudioEngine.h"
 #include <cmath>
 
+namespace
+{
+void copyAnalyzerExternalIr(SignalChain& source, SignalChain& destination)
+{
+    auto& sourceCab = source.getCabMicEngine();
+    auto& destinationCab = destination.getCabMicEngine();
+    if (sourceCab.hasExternalImpulse())
+        destinationCab.loadExternalImpulse(sourceCab.getExternalIrFile());
+    else
+        destinationCab.clearExternalImpulse();
+}
+}
+
 AudioEngine::AudioEngine()
 {
     liveAnalyzerTaps.setEnabled(false);
@@ -93,7 +106,9 @@ void AudioEngine::renderAnalyzerTest(AnalyzerTestMode mode, float frequencyHz, f
     if (!analyzerPrepared.load(std::memory_order_acquire)) return;
     const juce::ScopedLock lock(analyzerLock);
     if (!analyzerPrepared.load(std::memory_order_relaxed) || analyzerBuffer.getNumSamples() < analyzerRenderSamples) return;
-    signalChain.copySettingsTo(analyzerSignalChain); analyzerSignalChain.reset(); testAnalyzerTaps.clear(); analyzerBuffer.clear();
+    signalChain.copySettingsTo(analyzerSignalChain);
+    copyAnalyzerExternalIr(signalChain, analyzerSignalChain);
+    analyzerSignalChain.reset(); testAnalyzerTaps.clear(); analyzerBuffer.clear();
     const double fs = juce::jmax(8000.0, currentSampleRate.load(std::memory_order_relaxed));
     const float gain = juce::Decibels::decibelsToGain(juce::jlimit(-80.0f, 0.0f, levelDb)); const float nyquistSafe = static_cast<float>(fs * 0.45);
     frequencyHz = juce::jlimit(1.0f, nyquistSafe, frequencyHz); sweepStartHz = juce::jlimit(1.0f, nyquistSafe, sweepStartHz); sweepEndHz = juce::jlimit(sweepStartHz, nyquistSafe, sweepEndHz);
@@ -150,7 +165,9 @@ int AudioEngine::measureCurrentDspLatencySamples()
     if (!analyzerPrepared.load(std::memory_order_acquire)) return -1;
     const juce::ScopedLock lock(analyzerLock);
     if (!analyzerPrepared.load(std::memory_order_relaxed) || analyzerBuffer.getNumSamples() < analyzerRenderSamples) return -1;
-    signalChain.copySettingsTo(analyzerSignalChain); analyzerSignalChain.reset(); testAnalyzerTaps.clear(); analyzerBuffer.clear();
+    signalChain.copySettingsTo(analyzerSignalChain);
+    copyAnalyzerExternalIr(signalChain, analyzerSignalChain);
+    analyzerSignalChain.reset(); testAnalyzerTaps.clear(); analyzerBuffer.clear();
     constexpr int impulseIndex = 256;
     analyzerBuffer.setSample(0, impulseIndex, 0.20f); analyzerBuffer.setSample(1, impulseIndex, 0.20f);
     analyzerSignalChain.process(analyzerBuffer, 0, analyzerRenderSamples);
