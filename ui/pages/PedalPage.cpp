@@ -93,7 +93,7 @@ void PedalPage::updateModelLabels()
         case PedalType::germaniumFuzz: aux1.setName("BIAS"); aux2.setName("BODY"); aux3.setName("TRIM"); description.setText("Germanium fuzz: two-stage asymmetric fuzz with bias and supply-memory behaviour.",juce::dontSendNotification); break;
         case PedalType::siliconFuzz: aux1.setName("LOW CUT"); aux2.setName("FOCUS"); aux3.setName("MID SHAPE"); description.setText("Silicon fuzz: tighter, higher-gain fuzz with stronger harmonic density.",juce::dontSendNotification); break;
         case PedalType::octaveFuzz: aux1.setName("OCTAVE"); aux2.setName("BODY"); aux3.setName("TRIM"); description.setText("Octave fuzz: full-wave rectification creates the upper-octave component before re-clipping.",juce::dontSendNotification); break;
-        case PedalType::velcroFuzz: aux1.setName("BIAS"); aux2.setName("STARVE"); aux3.setName("GATE"); description.setText("Velcro fuzz: supply starvation plus hysteretic gating for sputter and note cut-off.",juce::dontSendNotification); break;
+        case PedalType::velcroFuzz: aux1.setName("STABILITY"); aux2.setName("STARVE"); aux3.setName("GATE"); description.setText("Feedback fuzz: STABILITY controls bounded positive feedback/ring, STARVE collapses supply, GATE sets note cut-off.",juce::dontSendNotification); break;
         case PedalType::hqOctaver:
             drive.setName("OCT +1"); tone.setName("OCT -1"); aux1.setName("TRACK"); aux2.setName("PITCH TONE"); aux3.setName("SMOOTH");
             description.setText("HQ Octaver: clean Whammy/POG-style fixed octaves using dual-head windowed pitch shifting. DRIVE=+1 octave, TONE=-1 octave, DRY blends the original.",juce::dontSendNotification); break;
