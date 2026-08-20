@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include <array>
+#include <memory>
 #include "../common/HQDSP.h"
 #include "JvmToneStack.h"
 
@@ -17,6 +18,7 @@ struct AmpHQParams
     float bassDb=0.0f, midDb=0.0f, trebleDb=0.0f;
     float sag=0.25f, sagRecoveryMs=95.0f;
     float damping=0.45f, presence=0.45f;
+    float resonance=0.50f;
     float biasExcursion=0.20f;
     float transformerSaturation=0.25f;
     float outputDb=-12.0f;
@@ -24,10 +26,21 @@ struct AmpHQParams
     JvmToneStackConfig jvmToneStack;
 };
 
+struct JVM410HControls
+{
+    float bass=0.5f;
+    float middle=0.5f;
+    float treble=0.5f;
+    float gain=0.5f;
+    float master=0.5f;
+    float presence=0.5f;
+    float resonance=0.5f;
+};
+
 class AmpEngineHQ
 {
 public:
-    AmpEngineHQ();
+    explicit AmpEngineHQ(int oversamplingOrder=4);
     ~AmpEngineHQ();
     void prepare(double sampleRate,int maxBlockSize);
     void reset();
@@ -35,16 +48,30 @@ public:
     const AmpHQParams& getParameters() const noexcept { return params; }
     void process(juce::AudioBuffer<float>& mono);
 
+    int getOversamplingFactor() const noexcept { return oversampling.getFactor(); }
+    float getOversamplingLatencySamples() const noexcept { return oversampling.getLatencySamples(); }
+
     // Circuit-derived reference voicing. This is a calibrated model target, not a
     // claim of measurement-matching any individual vintage amplifier specimen.
     static AmpHQParams makeBassman5F6AReference();
 
-    // Marshall JVM410H OD1 / Gain=5 reference. The nonlinear starting point is
-    // measurement-calibrated against public DAFx23 speaker-out/reactive-load data;
-    // B/M/T are normalised 0..1 controls feeding the physical JVM tone-stack model.
+    // Marshall JVM410H OD1 measured reference.
+    // B/M/T and Gain are backed by public measurement datasets. Master, Presence
+    // and Resonance are physical-model controls until matching multi-axis
+    // measurements become publicly available.
     static AmpHQParams makeJVM410HOD1Reference(float bass=0.5f,
                                                float middle=0.5f,
-                                               float treble=0.5f);
+                                               float treble=0.5f,
+                                               float gain=0.5f,
+                                               float master=0.5f,
+                                               float presence=0.5f,
+                                               float resonance=0.5f);
+    static AmpHQParams makeJVM410HOD1Reference(const JVM410HControls& controls)
+    {
+        return makeJVM410HOD1Reference(controls.bass, controls.middle, controls.treble,
+                                      controls.gain, controls.master,
+                                      controls.presence, controls.resonance);
+    }
 
 private:
     struct TubeStage;
