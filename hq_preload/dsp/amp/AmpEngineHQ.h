@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include <array>
 #include "../common/HQDSP.h"
+#include "JvmToneStack.h"
 
 namespace guitardsp::hq
 {
@@ -19,6 +20,8 @@ struct AmpHQParams
     float biasExcursion=0.20f;
     float transformerSaturation=0.25f;
     float outputDb=-12.0f;
+    bool jvmToneStackEnabled=false;
+    JvmToneStackConfig jvmToneStack;
 };
 
 class AmpEngineHQ
@@ -36,11 +39,9 @@ public:
     // claim of measurement-matching any individual vintage amplifier specimen.
     static AmpHQParams makeBassman5F6AReference();
 
-    // Marshall JVM410H OD1 target used by the offline measured-data fitter.
-    // The public DAFx23 dataset was recorded at Gain=5; bass/middle/treble are
-    // normalised 0..1 controls corresponding to the published 0..10 settings.
-    // Until the measured-data calibration workflow has been applied, this is a
-    // topology-informed starting point rather than a measurement-match claim.
+    // Marshall JVM410H OD1 / Gain=5 reference. The nonlinear starting point is
+    // measurement-calibrated against public DAFx23 speaker-out/reactive-load data;
+    // B/M/T are normalised 0..1 controls feeding the physical JVM tone-stack model.
     static AmpHQParams makeJVM410HOD1Reference(float bass=0.5f,
                                                float middle=0.5f,
                                                float treble=0.5f);

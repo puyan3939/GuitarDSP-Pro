@@ -83,10 +83,10 @@ jobs:
               "${in_name}" "${ref_name}" >> jvm-data/manifest.tsv
           }
 
-          # Use every input/reference listening pair published by the authors.
-          # Three tone settings participate in calibration; two entire settings
-          # remain untouched until holdout scoring.
-          for n in 4 8 3 1 2 5; do
+          # Calibration uses only published pairs whose input/reference envelope
+          # correspondence was verified by the coarse-alignment diagnostic.
+          # Entire B0_M0_T10 and B10_M0_T10 settings remain untouched holdouts.
+          for n in 4 3 2 5; do
             fetch_pair fit B1_M3_T7   1 3 7 "$n"
             fetch_pair fit B10_M0_T0 10 0 0 "$n"
           done

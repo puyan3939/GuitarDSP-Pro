@@ -20,6 +20,7 @@ struct AmpEngineHQ::Channel
 {
     std::array<TubeStage,20> st;
     Biquad bass,mid,treble;
+    JvmToneStack jvmTone;
     Slew sagEnv,biasEnv,transformerFlux;
     OnePoleLP nfbLow;
     float nfbHistory=0.0f;
@@ -87,23 +88,22 @@ AmpHQParams AmpEngineHQ::makeJVM410HOD1Reference(float bass, float middle, float
     for (auto& s : p.stage)
         s = { 20.0f, 18000.0f, 0.25f, 0.0f, 0.0f, 0.0f, 18000.0f, 4.0f };
 
-    // OD1/Gain=5 topology-informed starting point. The compact correction below
-    // is measurement-derived from the public DAFx23 JVM410H speaker-out/reactive-
-    // load listening pairs. It deliberately leaves absolute output gain and
-    // polarity outside the amp fit because those include the measurement chain.
     p.stage[0] = { 28.0f, 16000.0f, 1.30f, 0.008f, 0.12f, 0.035f, 13500.0f, 1.28f };
     p.stage[2] = { 52.0f, 13200.0f, 2.35f, 0.018f, 0.22f, 0.075f, 10200.0f, 0.94f };
     p.stage[4] = { 78.0f, 11200.0f, 3.10f, 0.032f, 0.30f, 0.110f, 8600.0f, 0.78f };
     p.stage[6] = { 105.0f, 9800.0f, 3.55f, 0.045f, 0.38f, 0.145f, 7200.0f, 0.70f };
     p.stage[8] = { 58.0f, 13200.0f, 1.38f, 0.010f, 0.14f, 0.060f, 10800.0f, 0.94f };
 
-    p.bassDb = -4.0f + 10.5f * bass;
-    p.midDb = -7.0f + 11.5f * middle;
-    p.trebleDb = -5.0f + 13.0f * treble;
+    // Use the measured JVM passive tone-stack topology instead of the generic
+    // three independent peak filters. Control interaction is therefore preserved.
+    p.jvmToneStackEnabled = true;
+    p.jvmToneStack.bass = bass;
+    p.jvmToneStack.middle = middle;
+    p.jvmToneStack.treble = treble;
 
-    // Measured calibration v1. These values are the deterministic optimum from
-    // the first public measured-pair fit. The dedicated CI fitter searches small
-    // residual corrections around this baseline and evaluates separate settings.
+    // Nonlinear measured calibration v1 from the public DAFx23 input/reference
+    // pairs. Absolute measurement-chain gain and polarity are intentionally not
+    // baked into the amp model.
     constexpr float driveScale = 1.290000f;
     constexpr float biasShift = 0.013750f;
     constexpr float lowPassScale = 1.174000f;
@@ -120,9 +120,6 @@ AmpHQParams AmpEngineHQ::makeJVM410HOD1Reference(float bass, float middle, float
         s.asymmetry = juce::jlimit(0.0f, 1.0f, s.asymmetry * asymmetryScale);
         s.memory = juce::jlimit(0.0f, 1.0f, s.memory * memoryScale);
     }
-    p.bassDb += -1.800000f + 1.260000f * (bass - 0.5f);
-    p.midDb += -1.800000f - 4.060000f * (middle - 0.5f);
-    p.trebleDb += 2.610000f - 4.060000f * (treble - 0.5f);
 
     p.stage[10] = { 28.0f, 16500.0f, 0.30f, 0.0f, 0.02f, 0.020f, 15000.0f, 3.18f };
     p.stage[11] = { 44.0f, 14200.0f, 1.05f, 0.010f, 0.16f, 0.070f, 11200.0f, 1.22f };
@@ -156,6 +153,7 @@ void AmpEngineHQ::prepare(double sampleRate,int maxBlockSize)
     {
         cp=std::make_unique<Channel>();
         for(auto& s:cp->st)s.prepare(internalFs);
+        cp->jvmTone.prepare(internalFs);
         cp->sagEnv.prepare(internalFs,params.sagRecoveryMs);
         cp->biasEnv.prepare(internalFs,22.0f);
         cp->transformerFlux.prepare(internalFs,6.0f);
@@ -170,14 +168,14 @@ void AmpEngineHQ::reset()
     for(auto& cp:channels)if(cp)
     {
         for(auto&s:cp->st){s.hp.reset();s.preLp.reset();s.postLp.reset();s.memory.reset();}
-        cp->bass.reset();cp->mid.reset();cp->treble.reset();cp->sagEnv.reset();cp->biasEnv.reset();cp->transformerFlux.reset();cp->nfbLow.reset();
+        cp->bass.reset();cp->mid.reset();cp->treble.reset();cp->jvmTone.reset();cp->sagEnv.reset();cp->biasEnv.reset();cp->transformerFlux.reset();cp->nfbLow.reset();
         cp->nfbHistory=0;cp->piMemory=0;
     }
 }
 
 void AmpEngineHQ::setParameters(const AmpHQParams& p)
 {
-    params=p;for(auto& cp:channels)if(cp){for(size_t i=0;i<20;++i)cp->st[i].set(params.stage[i]);cp->sagEnv.prepare(oversampling.getInternalSampleRate(),params.sagRecoveryMs);}updateFilters();
+    params=p;for(auto& cp:channels)if(cp){for(size_t i=0;i<20;++i)cp->st[i].set(params.stage[i]);cp->jvmTone.setConfig(params.jvmToneStack);cp->sagEnv.prepare(oversampling.getInternalSampleRate(),params.sagRecoveryMs);}updateFilters();
 }
 
 void AmpEngineHQ::updateFilters()
@@ -194,7 +192,7 @@ void AmpEngineHQ::updateFilters()
 float AmpEngineHQ::processChannel(Channel& c,float x)
 {
     for(int i=0;i<=9;++i)x=c.st[(size_t)i].process(x);
-    x=c.treble.process(c.mid.process(c.bass.process(x)));
+    x=params.jvmToneStackEnabled ? c.jvmTone.process(x) : c.treble.process(c.mid.process(c.bass.process(x)));
     x=c.st[10].process(x);x=c.st[11].process(x);x=c.st[12].process(x);x=c.st[13].process(x);
 
     const float piIn=c.st[14].process(x);
