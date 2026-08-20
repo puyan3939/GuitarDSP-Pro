@@ -147,15 +147,22 @@ int main()
         cp.mix = 1.0f;
         cab.setParameters(cp);
         ok &= require(cab.loadExternalImpulse(temp), "User IR WAV accepted");
-        for (int retry = 0; retry < 100 && cab.getCurrentIrSize() != 2048; ++retry)
-            juce::Thread::sleep(10);
-        std::cout << "INFO user IR size " << cab.getCurrentIrSize() << '\n';
-        ok &= require(cab.getCurrentIrSize() == 2048, "User IR resampled/truncated to 2048 samples");
         cab.setEnabled(true);
+
         juce::AudioBuffer<float> b(2, blockSize);
-        for (int block = 0; block < 16; ++block)
+        int blocksProcessed = 0;
+        for (; blocksProcessed < 160 && cab.getCurrentIrSize() != 2048; ++blocksProcessed)
         {
-            fillContinuousSine(b, 0.08f, 440.0f, block);
+            fillContinuousSine(b, 0.08f, 440.0f, blocksProcessed);
+            cab.process(b, 0, blockSize);
+            juce::Thread::sleep(2);
+        }
+        std::cout << "INFO user IR size " << cab.getCurrentIrSize() << " after " << blocksProcessed << " blocks\n";
+        ok &= require(cab.getCurrentIrSize() == 2048, "User IR resampled/truncated to 2048 samples");
+
+        for (int block = 0; block < 24; ++block)
+        {
+            fillContinuousSine(b, 0.08f, 440.0f, blocksProcessed + block);
             cab.process(b, 0, blockSize);
         }
         ok &= require(sane(b) && rms(b) > 1.0e-7f, "User IR convolution finite and active");
