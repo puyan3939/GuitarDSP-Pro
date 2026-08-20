@@ -32,8 +32,14 @@ public:
     guitardsp::hq::AmpEngineHQ& getHQAmpEngine() noexcept { return signalChain.getHQAmpEngine(); }
     guitardsp::hq::HQEffectsRack& getHQEffectsRack() noexcept { return signalChain.getHQEffectsRack(); }
     guitardsp::hq::CabMicEngineHQ& getCabMicEngine() noexcept { return signalChain.getCabMicEngine(); }
+    guitardsp::hq::InputLoadingControl& getInputLoadingControl() noexcept { return signalChain.getInputLoadingControl(); }
+    guitardsp::hq::ExpressionPitchControl& getExpressionPitchControl() noexcept { return signalChain.getExpressionPitchControl(); }
+    guitardsp::hq::DualDelayControl& getDualDelayControl() noexcept { return signalChain.getDualDelayControl(); }
+    guitardsp::hq::SceneSwitcherHQ& getSceneSwitcher() noexcept { return signalChain.getSceneSwitcher(); }
     void setAmpMode(SignalChain::AmpMode mode) noexcept { signalChain.setAmpMode(mode); }
     SignalChain::AmpMode getAmpMode() const noexcept { return signalChain.getAmpMode(); }
+    void setOutputMode(SignalChain::OutputMode mode) noexcept { signalChain.setOutputMode(mode); }
+    SignalChain::OutputMode getOutputMode() const noexcept { return signalChain.getOutputMode(); }
 
     juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager; }
 
@@ -51,9 +57,6 @@ public:
                             float sweepStartHz = 20.0f,
                             float sweepEndHz = 20000.0f);
 
-    // Hardware loopback measurement. Connect physical output 1 to input 1.
-    // Normal audio remains muted after capture/result until the user disconnects
-    // the loopback cable and explicitly restores audio.
     bool startRoundTripLatencyMeasurement();
     void finaliseRoundTripLatencyMeasurement();
     void restoreAudioAfterLatencyMeasurement() noexcept;
@@ -70,8 +73,6 @@ public:
     int getReportedInputLatencySamples() const noexcept { return reportedInputLatencySamples.load(std::memory_order_relaxed); }
     int getReportedOutputLatencySamples() const noexcept { return reportedOutputLatencySamples.load(std::memory_order_relaxed); }
 
-    // Effective impulse-peak delay of the current DSP chain, measured on the
-    // separate analysis SignalChain so the live audio callback is never blocked.
     int measureCurrentDspLatencySamples();
 
 private:
@@ -101,8 +102,6 @@ private:
     std::vector<float> latencyProbe;
     juce::AudioBuffer<float> latencyCapture;
     int latencyWriteIndex = 0;
-    // 0 idle/no result, 1 recording, 2 captured-awaiting-analysis,
-    // 3 result-ready + muted, 4 result-ready + audio restored.
     std::atomic<int> latencyState { 0 };
     std::atomic<int> measuredRoundTripSamples { -1 };
     std::atomic<float> latencyCorrelation { 0.0f };
