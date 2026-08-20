@@ -40,7 +40,14 @@ struct JVM410HControls
 class AmpEngineHQ
 {
 public:
-    explicit AmpEngineHQ(int oversamplingOrder=4);
+    // Measurement Lab sweeps 1x/2x/4x/8x/16x. Across the current JVM410H
+    // matrix, 8x is the realtime HQ default: roughly half the 16x CPU cost,
+    // with essentially identical low/mid-band spur performance. 16x remains
+    // available explicitly for stress tests / future ULTRA quality mode.
+    static constexpr int defaultOversamplingOrder = 3; // 8x
+    static constexpr int ultraOversamplingOrder = 4;   // 16x
+
+    explicit AmpEngineHQ(int oversamplingOrder=defaultOversamplingOrder);
     ~AmpEngineHQ();
     void prepare(double sampleRate,int maxBlockSize);
     void reset();
