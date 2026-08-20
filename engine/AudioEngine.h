@@ -52,12 +52,19 @@ public:
                             float sweepEndHz = 20000.0f);
 
     // Hardware loopback measurement. Connect physical output 1 to input 1.
-    // Normal audio is muted while the short low-level pseudo-random probe runs.
+    // Normal audio remains muted after capture/result until the user disconnects
+    // the loopback cable and explicitly restores audio.
     bool startRoundTripLatencyMeasurement();
     void finaliseRoundTripLatencyMeasurement();
+    void restoreAudioAfterLatencyMeasurement() noexcept;
     bool isRoundTripLatencyMeasurementActive() const noexcept { return latencyState.load(std::memory_order_acquire) == 1; }
     bool isRoundTripLatencyCaptureReady() const noexcept { return latencyState.load(std::memory_order_acquire) == 2; }
-    bool hasRoundTripLatencyResult() const noexcept { return latencyState.load(std::memory_order_acquire) == 3; }
+    bool hasRoundTripLatencyResult() const noexcept { return latencyState.load(std::memory_order_acquire) >= 3; }
+    bool isLatencyProbeMutingAudio() const noexcept
+    {
+        const int state = latencyState.load(std::memory_order_acquire);
+        return state >= 1 && state <= 3;
+    }
     int getMeasuredRoundTripLatencySamples() const noexcept { return measuredRoundTripSamples.load(std::memory_order_relaxed); }
     float getLatencyMeasurementCorrelation() const noexcept { return latencyCorrelation.load(std::memory_order_relaxed); }
     int getReportedInputLatencySamples() const noexcept { return reportedInputLatencySamples.load(std::memory_order_relaxed); }
@@ -72,6 +79,7 @@ private:
     void audioDeviceStopped() override;
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,int numInputChannels,float* const* outputChannelData,int numOutputChannels,int numSamples,const juce::AudioIODeviceCallbackContext&) override;
     void processLatencyProbeBlock(const float* const* inputChannelData,int numInputChannels,float* const* outputChannelData,int numOutputChannels,int numSamples) noexcept;
+    static void clearOutputs(float* const* outputChannelData,int numOutputChannels,int numSamples) noexcept;
     static void measureBlock(const juce::AudioBuffer<float>& buffer,int startSample,int numSamples,std::array<LevelMeter, 2>& peakMeters,std::array<std::atomic<float>, 2>& rmsDb);
 
     static constexpr int analyzerRenderSamples = 4096;
@@ -93,7 +101,9 @@ private:
     std::vector<float> latencyProbe;
     juce::AudioBuffer<float> latencyCapture;
     int latencyWriteIndex = 0;
-    std::atomic<int> latencyState { 0 }; // 0 idle, 1 recording, 2 captured, 3 result
+    // 0 idle/no result, 1 recording, 2 captured-awaiting-analysis,
+    // 3 result-ready + muted, 4 result-ready + audio restored.
+    std::atomic<int> latencyState { 0 };
     std::atomic<int> measuredRoundTripSamples { -1 };
     std::atomic<float> latencyCorrelation { 0.0f };
     std::atomic<int> reportedInputLatencySamples { 0 };
