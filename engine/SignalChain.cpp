@@ -11,11 +11,13 @@ void SignalChain::prepare(double sampleRate, int maximumBlockSize)
     startupFade.setTargetValue(1.0f);
 
     ampWorkBuffer.setSize(1, maximumBlockSize, false, false, true);
+    parallelTapBuffer.setSize(1, maximumBlockSize, false, false, true);
     ampEngine.prepare(sampleRate, maximumBlockSize);
     hqAmpEngine.prepare(sampleRate, maximumBlockSize);
     hqEffects.prepare(sampleRate, maximumBlockSize);
     cabMic.prepare(sampleRate, maximumBlockSize);
     cabMic.setEnabled(false);
+    parallelRig.prepare(sampleRate, maximumBlockSize);
     limiter.prepare(sampleRate);
     limiter.setCeiling(0.28f);
     limiter.setOutputGainDb(-18.0f);
@@ -27,8 +29,10 @@ void SignalChain::reset()
     hqAmpEngine.reset();
     hqEffects.reset();
     cabMic.reset();
+    parallelRig.reset();
     limiter.reset();
     ampWorkBuffer.clear();
+    parallelTapBuffer.clear();
 }
 
 void SignalChain::process(juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
@@ -43,10 +47,23 @@ void SignalChain::process(juce::AudioBuffer<float>& buffer, int startSample, int
     if (!bypass.load(std::memory_order_relaxed))
     {
         applyInputGain(buffer, startSample, numSamples);
+
+        const auto& routing = hqEffects.parallelRigControl();
+        const bool useParallelRig = routing.enabled.load(std::memory_order_relaxed);
+        if (useParallelRig)
+            captureParallelTap(buffer, startSample, numSamples);
+
         hqEffects.processPreAmp(buffer, startSample, numSamples);
         if (getAmpMode() == AmpMode::hq) processHQAmp(buffer, startSample, numSamples);
         else processLegacyAmp(buffer, startSample, numSamples);
         cabMic.process(buffer, startSample, numSamples);
+
+        // The split tap is taken immediately after input gain, before pedals and
+        // amp distortion.  MAIN remains the normal rig; CLEAN and SUB are built
+        // from the untouched tap and recombined before global post effects.
+        if (useParallelRig)
+            parallelRig.process(parallelTapBuffer, buffer, startSample, numSamples, routing);
+
         hqEffects.processPostAmp(buffer, startSample, numSamples);
     }
 
@@ -70,6 +87,14 @@ void SignalChain::applyInputGain(juce::AudioBuffer<float>& buffer, int startSamp
     inputGain.setTargetValue(juce::Decibels::decibelsToGain(inputGainDb.load(std::memory_order_relaxed)));
     const int channels = juce::jmin(2, buffer.getNumChannels());
     for (int i = 0; i < numSamples; ++i){const float gain = inputGain.getNextValue();for (int ch = 0; ch < channels; ++ch) buffer.getWritePointer(ch, startSample)[i] *= gain;}
+}
+
+void SignalChain::captureParallelTap(const juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
+{
+    // Amp processing is mono downstream, so the routing tap is intentionally one
+    // channel as well.  copyDetectedMonoToStereo() has already selected the live
+    // input when mono-to-stereo mode is active.
+    parallelTapBuffer.copyFrom(0, 0, buffer, 0, startSample, numSamples);
 }
 
 void SignalChain::processLegacyAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
