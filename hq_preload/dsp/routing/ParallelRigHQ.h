@@ -3,13 +3,14 @@
 #include <atomic>
 #include <vector>
 #include <cmath>
+#include <algorithm>
 #include "../common/HQDSP.h"
 #include "../pedals/PitchOctaverHQ.h"
 
 namespace guitardsp::hq
 {
-// Controls for a multi-bus rig.  The feature is opt-in so legacy presets remain
-// sample-for-sample compatible until PARALLEL RIG is enabled.
+// Controls for a multi-bus rig. The feature is opt-in so legacy presets remain
+// unchanged until PARALLEL RIG is enabled.
 struct ParallelRigControl
 {
     std::atomic<bool> enabled{false};
@@ -39,14 +40,14 @@ struct ParallelRigControl
     std::atomic<bool> subInvert{false};
 };
 
-// Three-bus processor intended for rigs where one guitar behaves like several
+// Three-bus processor for rigs where one guitar behaves like several
 // instruments at once:
 //   MAIN  : normal pedal -> amp -> cab path (processed outside this class)
 //   CLEAN : un-clipped attack / upper-mid detail path
-//   SUB   : dedicated octave-down -> bass-amp / bass-cab path
+//   SUB   : dedicated octave-down -> bass-head / bass-cab path
 //
 // The clean and sub buses deliberately use independent filtering, saturation,
-// level and delay compensation.  This is structurally different from simply
+// level and delay compensation. This is structurally different from simply
 // mixing octave voices into the front of one guitar amp.
 class ParallelRigHQ
 {
@@ -120,19 +121,22 @@ public:
 
         const auto* clean = cleanWork.getReadPointer(0);
         const auto* sub = subWork.getReadPointer(0);
-        const int channels = juce::jmin(2, processedMain.getNumChannels());
+        auto* mainOut = processedMain.getWritePointer(0, startSample);
 
-        for (int ch = 0; ch < channels; ++ch)
+        // The amp path is already mono by this point. Mix the buses once, then
+        // duplicate the exact result to channel 2 so delay states do not advance
+        // twice and phase compensation remains deterministic.
+        for (int i = 0; i < numSamples; ++i)
         {
-            auto* out = processedMain.getWritePointer(ch, startSample);
-            for (int i = 0; i < numSamples; ++i)
-            {
-                const float main = mainDelay.process(out[i]);
-                const float attack = cleanDelay.process(clean[i]);
-                const float bass = subDelay.process(sub[i]);
-                out[i] = mainGain * main + cleanGain * cleanPolarity * attack + subGain * subPolarity * bass;
-            }
+            const float main = mainDelay.process(mainOut[i]);
+            const float attack = cleanDelay.process(clean[i]);
+            const float bass = subDelay.process(sub[i]);
+            mainOut[i] = mainGain * main + cleanGain * cleanPolarity * attack + subGain * subPolarity * bass;
         }
+
+        const int channels = juce::jmin(2, processedMain.getNumChannels());
+        for (int ch = 1; ch < channels; ++ch)
+            processedMain.copyFrom(ch, startSample, processedMain, 0, startSample, numSamples);
     }
 
 private:
