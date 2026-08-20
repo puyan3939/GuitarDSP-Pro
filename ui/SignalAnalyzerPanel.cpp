@@ -13,6 +13,16 @@ float peakOf(const std::vector<float>& samples)
         peak = juce::jmax(peak, std::abs(x));
     return peak;
 }
+
+juce::String formatFrequency(float frequency)
+{
+    if (frequency >= 1000.0f)
+    {
+        const float khz = frequency / 1000.0f;
+        return juce::String(khz, khz < 10.0f && std::fmod(khz, 1.0f) != 0.0f ? 1 : 0) + "k";
+    }
+    return juce::String((int)std::round(frequency));
+}
 }
 
 SignalAnalyzerPanel::SignalAnalyzerPanel(AudioEngine& engine)
@@ -299,15 +309,46 @@ void SignalAnalyzerPanel::drawSpectrum(juce::Graphics& g,
     const float logMin = std::log10(minFreq);
     const float logMax = std::log10(maxFreq);
 
-    g.setColour(juce::Colour::fromRGB(31, 38, 47));
-    for (int db = -80; db <= -20; db += 20)
+    auto plot = bounds;
+    plot.removeFromLeft(38.0f);
+    plot.removeFromBottom(17.0f);
+
+    g.setFont(juce::Font(9.5f));
+    static const std::array<int, 6> dbTicks { -100, -80, -60, -40, -20, 0 };
+    for (const int db : dbTicks)
     {
-        const float y = juce::jmap((float)db, -100.0f, 0.0f, bounds.getBottom(), bounds.getY());
-        g.drawHorizontalLine((int)y, bounds.getX(), bounds.getRight());
+        const float y = juce::jmap((float)db, -100.0f, 0.0f, plot.getBottom(), plot.getY());
+        g.setColour(juce::Colour::fromRGB(db == 0 ? 58 : 36, db == 0 ? 68 : 44, db == 0 ? 78 : 53));
+        g.drawHorizontalLine((int)y, plot.getX(), plot.getRight());
+        g.setColour(juce::Colour::fromRGB(126, 137, 149));
+        g.drawText(juce::String(db) + " dB",
+                   juce::Rectangle<float>(bounds.getX(), y - 7.0f, 35.0f, 14.0f),
+                   juce::Justification::centredRight);
+    }
+
+    static const std::array<float, 10> frequencyTicks { 20.0f, 50.0f, 100.0f, 200.0f, 500.0f,
+                                                        1000.0f, 2000.0f, 5000.0f, 10000.0f, 20000.0f };
+    for (const float frequency : frequencyTicks)
+    {
+        if (frequency < minFreq || frequency > maxFreq)
+            continue;
+        const float xNorm = (std::log10(frequency) - logMin) / (logMax - logMin);
+        const float x = plot.getX() + xNorm * plot.getWidth();
+        g.setColour(juce::Colour::fromRGB(34, 42, 51));
+        g.drawVerticalLine((int)x, plot.getY(), plot.getBottom());
+        g.setColour(juce::Colour::fromRGB(126, 137, 149));
+        g.drawText(formatFrequency(frequency),
+                   juce::Rectangle<float>(x - 18.0f, plot.getBottom() + 2.0f, 36.0f, 13.0f),
+                   juce::Justification::centred);
     }
 
     juce::Path path;
     bool started = false;
+    float peakDb = -100.0f;
+    float peakFrequency = 0.0f;
+    float peakX = plot.getX();
+    float peakY = plot.getBottom();
+
     for (int bin = 1; bin < fftSize / 2; ++bin)
     {
         const float frequency = (float)((double)bin * fs / (double)fftSize);
@@ -317,13 +358,37 @@ void SignalAnalyzerPanel::drawSpectrum(juce::Graphics& g,
         const float xNorm = (std::log10(frequency) - logMin) / (logMax - logMin);
         const float magnitude = fftData[(size_t)bin] / (float)(fftSize / 2);
         const float db = juce::Decibels::gainToDecibels(magnitude, -100.0f);
-        const float x = bounds.getX() + xNorm * bounds.getWidth();
-        const float y = juce::jmap(juce::jlimit(-100.0f, 0.0f, db), -100.0f, 0.0f, bounds.getBottom(), bounds.getY());
+        const float clippedDb = juce::jlimit(-100.0f, 0.0f, db);
+        const float x = plot.getX() + xNorm * plot.getWidth();
+        const float y = juce::jmap(clippedDb, -100.0f, 0.0f, plot.getBottom(), plot.getY());
         if (!started) { path.startNewSubPath(x, y); started = true; } else path.lineTo(x, y);
+
+        if (db > peakDb)
+        {
+            peakDb = db;
+            peakFrequency = frequency;
+            peakX = x;
+            peakY = y;
+        }
     }
 
     g.setColour(juce::Colour::fromRGB(98, 213, 167));
-    g.strokePath(path, juce::PathStrokeType(1.2f));
+    g.strokePath(path, juce::PathStrokeType(1.35f));
+
+    if (peakFrequency > 0.0f && peakDb > -96.0f)
+    {
+        g.setColour(juce::Colour::fromRGB(222, 110, 58));
+        g.drawVerticalLine((int)peakX, plot.getY(), plot.getBottom());
+        g.fillEllipse(peakX - 2.5f, peakY - 2.5f, 5.0f, 5.0f);
+
+        const juce::String peakText = "PEAK  " + formatFrequency(peakFrequency) + "Hz  " + juce::String(peakDb, 1) + " dB";
+        g.setFont(juce::Font(10.5f, juce::Font::bold));
+        auto badge = juce::Rectangle<float>(plot.getRight() - 148.0f, plot.getY() + 5.0f, 143.0f, 18.0f);
+        g.setColour(juce::Colour::fromRGB(26, 31, 38).withAlpha(0.92f));
+        g.fillRoundedRectangle(badge, 3.0f);
+        g.setColour(juce::Colour::fromRGB(222, 110, 58));
+        g.drawText(peakText, badge.reduced(4.0f, 0.0f), juce::Justification::centredRight);
+    }
 }
 
 juce::String SignalAnalyzerPanel::makeStatsText(const std::vector<float>& samples, bool showThd) const
