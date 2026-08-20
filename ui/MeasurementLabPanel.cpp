@@ -9,7 +9,7 @@ MeasurementLabPanel::MeasurementLabPanel(AudioEngine& engine)
     title.setColour(juce::Label::textColourId, juce::Colour::fromRGB(222, 110, 58));
 
     instructions.setText("LATENCY: connect physical OUTPUT 1 -> INPUT 1. The app mutes normal audio and sends a low-level probe for about 0.35 s.\n"
-                         "DSP IMPULSE measures the current in-app chain separately. Estimated end-to-end = hardware loopback + DSP impulse delay.",
+                         "After the result appears, disconnect the loopback cable, then press RESTORE AUDIO. DSP IMPULSE is measured separately.",
                          juce::dontSendNotification);
     instructions.setColour(juce::Label::textColourId, juce::Colour::fromRGB(180, 188, 198));
     instructions.setJustificationType(juce::Justification::topLeft);
@@ -24,18 +24,25 @@ MeasurementLabPanel::MeasurementLabPanel(AudioEngine& engine)
                    juce::dontSendNotification);
 
     addAndMakeVisible(title); addAndMakeVisible(instructions); addAndMakeVisible(deviceInfo); addAndMakeVisible(dspInfo);
-    addAndMakeVisible(resultInfo); addAndMakeVisible(osInfo); addAndMakeVisible(measureButton); addAndMakeVisible(refreshDspButton);
+    addAndMakeVisible(resultInfo); addAndMakeVisible(osInfo); addAndMakeVisible(measureButton); addAndMakeVisible(restoreButton); addAndMakeVisible(refreshDspButton);
 
     measureButton.onClick = [this]
     {
         if (audioEngine.startRoundTripLatencyMeasurement())
         {
-            resultInfo.setText("MEASURING... normal audio temporarily muted", juce::dontSendNotification);
+            resultInfo.setText("MEASURING... normal audio muted", juce::dontSendNotification);
             measureButton.setEnabled(false);
+            restoreButton.setEnabled(false);
         }
+    };
+    restoreButton.onClick = [this]
+    {
+        audioEngine.restoreAudioAfterLatencyMeasurement();
+        refreshLabels();
     };
     refreshDspButton.onClick = [this] { refreshDspLatency(); };
 
+    restoreButton.setEnabled(false);
     refreshLabels(); startTimerHz(10);
 }
 
@@ -49,7 +56,11 @@ void MeasurementLabPanel::refreshDspLatency()
 void MeasurementLabPanel::timerCallback()
 {
     if (audioEngine.isRoundTripLatencyCaptureReady()) audioEngine.finaliseRoundTripLatencyMeasurement();
-    measureButton.setEnabled(!audioEngine.isRoundTripLatencyMeasurementActive()); refreshLabels();
+    const bool active = audioEngine.isRoundTripLatencyMeasurementActive();
+    const bool mutedForSafety = audioEngine.isLatencyProbeMutingAudio();
+    measureButton.setEnabled(!active && !mutedForSafety);
+    restoreButton.setEnabled(audioEngine.hasRoundTripLatencyResult() && mutedForSafety);
+    refreshLabels();
 }
 
 void MeasurementLabPanel::refreshLabels()
@@ -81,12 +92,17 @@ void MeasurementLabPanel::refreshLabels()
                 const int total = roundTrip + dspLatencySamples;
                 text += "\nEST. INPUT -> DSP -> OUTPUT  " + juce::String(total) + " smp / " + juce::String(1000.0 * total / fs, 3) + " ms";
             }
+            if (audioEngine.isLatencyProbeMutingAudio())
+                text += "\nOUTPUT MUTED — disconnect loopback cable, then press RESTORE AUDIO";
             resultInfo.setText(text, juce::dontSendNotification);
         }
         else
         {
-            resultInfo.setText("No reliable loopback detected (correlation " + juce::String(corr, 3)
-                               + "). Check OUTPUT 1 -> INPUT 1 cable and interface routing.", juce::dontSendNotification);
+            juce::String text = "No reliable loopback detected (correlation " + juce::String(corr, 3)
+                              + "). Check OUTPUT 1 -> INPUT 1 cable and interface routing.";
+            if (audioEngine.isLatencyProbeMutingAudio())
+                text += "\nOUTPUT MUTED — disconnect cable, then press RESTORE AUDIO";
+            resultInfo.setText(text, juce::dontSendNotification);
         }
     }
 }
@@ -102,7 +118,10 @@ void MeasurementLabPanel::resized()
 {
     auto r = getLocalBounds().reduced(28);
     title.setBounds(r.removeFromTop(38)); instructions.setBounds(r.removeFromTop(72)); r.removeFromTop(10);
-    deviceInfo.setBounds(r.removeFromTop(34)); dspInfo.setBounds(r.removeFromTop(34)); resultInfo.setBounds(r.removeFromTop(68));
-    r.removeFromTop(8); auto buttons = r.removeFromTop(34); measureButton.setBounds(buttons.removeFromLeft(190)); buttons.removeFromLeft(10); refreshDspButton.setBounds(buttons.removeFromLeft(190));
+    deviceInfo.setBounds(r.removeFromTop(34)); dspInfo.setBounds(r.removeFromTop(34)); resultInfo.setBounds(r.removeFromTop(86));
+    r.removeFromTop(8); auto buttons = r.removeFromTop(34);
+    measureButton.setBounds(buttons.removeFromLeft(180)); buttons.removeFromLeft(10);
+    restoreButton.setBounds(buttons.removeFromLeft(160)); buttons.removeFromLeft(10);
+    refreshDspButton.setBounds(buttons.removeFromLeft(190));
     r.removeFromTop(22); osInfo.setBounds(r.removeFromTop(54));
 }
