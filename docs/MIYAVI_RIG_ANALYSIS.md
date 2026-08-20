@@ -38,3 +38,7 @@ The first multibus experiment validated the usefulness of the SUB octave/bass pa
 - Current HQ Guitar Compressor on MAIN with a slower attack and parallel blend to keep the first transient.
 
 The selected Factory IR in the initial preset is an audition starting point only; no source establishes it as MIYAVI's actual cabinet capture.
+
+## Verification
+
+The full Linux JUCE 9 build, application build, DSP/reference smoke tests and DSP Fast Check pass on this architecture. The CI workflow now also runs the full Linux build on pull requests so future routing/UI changes cannot silently regress GUI compilation.
