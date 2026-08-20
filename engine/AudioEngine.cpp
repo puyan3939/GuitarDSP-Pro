@@ -125,7 +125,8 @@ void AudioEngine::renderAnalyzerTest(AnalyzerTestMode mode, float frequencyHz, f
 
 bool AudioEngine::startRoundTripLatencyMeasurement()
 {
-    if (latencyState.load(std::memory_order_acquire) == 1 || latencyCapture.getNumSamples() < latencyCaptureLength) return false;
+    const int state = latencyState.load(std::memory_order_acquire);
+    if (state == 1 || state == 2 || latencyCapture.getNumSamples() < latencyCaptureLength) return false;
     latencyCapture.clear(); latencyWriteIndex = 0;
     measuredRoundTripSamples.store(-1, std::memory_order_relaxed); latencyCorrelation.store(0.0f, std::memory_order_relaxed);
     latencyState.store(1, std::memory_order_release); return true;
@@ -135,7 +136,7 @@ void AudioEngine::processLatencyProbeBlock(const float* const* inputChannelData,
                                            float* const* outputChannelData, int numOutputChannels,
                                            int numSamples) noexcept
 {
-    for (int ch = 0; ch < numOutputChannels; ++ch) if (outputChannelData[ch] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[ch], numSamples);
+    clearOutputs(outputChannelData, numOutputChannels, numSamples);
     auto* capture = latencyCapture.getNumSamples() >= latencyCaptureLength ? latencyCapture.getWritePointer(0) : nullptr;
     for (int i = 0; i < numSamples; ++i)
     {
@@ -158,6 +159,19 @@ void AudioEngine::finaliseRoundTripLatencyMeasurement()
     latencyCorrelation.store(correlation, std::memory_order_relaxed);
     measuredRoundTripSamples.store(std::abs(correlation) >= 0.30f && delay >= 0 ? delay : -1, std::memory_order_relaxed);
     latencyState.store(3, std::memory_order_release);
+}
+
+void AudioEngine::restoreAudioAfterLatencyMeasurement() noexcept
+{
+    if (latencyState.load(std::memory_order_acquire) == 3)
+        latencyState.store(4, std::memory_order_release);
+}
+
+void AudioEngine::clearOutputs(float* const* outputChannelData, int numOutputChannels, int numSamples) noexcept
+{
+    for (int ch = 0; ch < numOutputChannels; ++ch)
+        if (outputChannelData[ch] != nullptr)
+            juce::FloatVectorOperations::clear(outputChannelData[ch], numSamples);
 }
 
 int AudioEngine::measureCurrentDspLatencySamples()
@@ -193,7 +207,18 @@ void AudioEngine::audioDeviceStopped()
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData,int numInputChannels,float* const* outputChannelData,int numOutputChannels,int numSamples,const juce::AudioIODeviceCallbackContext&)
 {
-    if (latencyState.load(std::memory_order_acquire) == 1) { processLatencyProbeBlock(inputChannelData, numInputChannels, outputChannelData, numOutputChannels, numSamples); return; }
+    const int latencyMode = latencyState.load(std::memory_order_acquire);
+    if (latencyMode == 1)
+    {
+        processLatencyProbeBlock(inputChannelData, numInputChannels, outputChannelData, numOutputChannels, numSamples);
+        return;
+    }
+    if (latencyMode == 2 || latencyMode == 3)
+    {
+        clearOutputs(outputChannelData, numOutputChannels, numSamples);
+        return;
+    }
+
     ioBuffer.setSize(2, numSamples, false, false, true); ioBuffer.clear();
     const int inputsToCopy = juce::jmin(2, numInputChannels);
     for (int ch = 0; ch < inputsToCopy; ++ch) if (inputChannelData[ch] != nullptr) juce::FloatVectorOperations::copy(ioBuffer.getWritePointer(ch), inputChannelData[ch], numSamples);
