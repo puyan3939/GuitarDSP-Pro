@@ -16,14 +16,19 @@ public:
 
 private:
     class AnalyzerWindow;
+    class MeasurementWindow;
 
     void toggleAnalyzerWindow();
     void setAnalyzerWindowVisible(bool shouldShow);
+    void toggleMeasurementWindow();
+    void setMeasurementWindowVisible(bool shouldShow);
 
     AudioEngine audioEngine;
     MainView mainView { audioEngine };
     juce::TextButton analyzerButton { "ANALYZER" };
+    juce::TextButton measurementButton { "MEASURE LAB" };
     std::unique_ptr<AnalyzerWindow> analyzerWindow;
+    std::unique_ptr<MeasurementWindow> measurementWindow;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
