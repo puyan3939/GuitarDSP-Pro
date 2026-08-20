@@ -214,7 +214,7 @@ bool loadManifest(const juce::File& manifest, std::vector<Clip>& clips)
 
         double inRate = 0.0, targetRate = 0.0;
         if (!loadMono(formats, baseDir.getChildFile(inputPath), clip.input, inRate)
-            || !loadMono(formats, baseDir.getChildFile(targetPath), clip.target, targetRate)
+            || !loadMono(formats, baseDir.getChildFile(targetPath), clip.target, targetRate))
             return false;
         if (std::abs(inRate - targetRate) > 0.5) return false;
         clip.sampleRate = inRate;
