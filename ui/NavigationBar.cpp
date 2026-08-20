@@ -6,6 +6,7 @@ NavigationBar::NavigationBar()
     configureButton(pedalButton, "PEDAL", Page::pedal);
     configureButton(cabButton, "CAB", Page::cab);
     configureButton(effectsButton, "FX", Page::effects);
+    configureButton(performanceButton, "RIG", Page::performance);
     configureButton(settingsButton, "SETTINGS", Page::settings);
     refreshColours();
 }
@@ -46,16 +47,18 @@ void NavigationBar::refreshColours()
     apply(pedalButton, Page::pedal);
     apply(cabButton, Page::cab);
     apply(effectsButton, Page::effects);
+    apply(performanceButton, Page::performance);
     apply(settingsButton, Page::settings);
 }
 
 void NavigationBar::resized()
 {
     auto r = getLocalBounds().reduced(8, 5);
-    const int w = r.getWidth() / 5;
+    const int w = r.getWidth() / 6;
     ampButton.setBounds(r.removeFromLeft(w).reduced(4, 0));
     pedalButton.setBounds(r.removeFromLeft(w).reduced(4, 0));
     cabButton.setBounds(r.removeFromLeft(w).reduced(4, 0));
     effectsButton.setBounds(r.removeFromLeft(w).reduced(4, 0));
+    performanceButton.setBounds(r.removeFromLeft(w).reduced(4, 0));
     settingsButton.setBounds(r.reduced(4, 0));
 }
