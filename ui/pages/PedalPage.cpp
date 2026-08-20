@@ -19,6 +19,7 @@ PedalPage::PedalPage(HQEffectsRack& rack) : effectsRack(rack)
     const char* models[] = {"Clean Boost","Treble Boost","Mid Overdrive","Transparent OD","Hard Distortion","Germanium Fuzz","Silicon Fuzz","Octave Fuzz","Velcro Fuzz","HQ Octaver"};
     for (int i=0;i<10;++i) modelSelector.addItem(models[i],i+1);
     addAndMakeVisible(modelSelector); addAndMakeVisible(enabledButton);
+    addAndMakeVisible(routeMain); addAndMakeVisible(routeClean); addAndMakeVisible(routeSub);
 
     setupKnob(drive,"DRIVE",0.0,1.0,0.001); setupKnob(tone,"TONE",0.0,1.0,0.001);
     setupKnob(level,"LEVEL",-24.0,18.0,0.1); level.setTextValueSuffix(" dB");
@@ -44,6 +45,7 @@ PedalPage::PedalPage(HQEffectsRack& rack) : effectsRack(rack)
     setupKnob(guitarSustain,"SUSTAIN",0.0,1.0,0.001); setupKnob(guitarAttack,"ATTACK",0.0,1.0,0.001); setupKnob(guitarBlend,"BLEND",0.0,1.0,0.001); setupKnob(guitarLevel,"LEVEL",-12.0,18.0,0.1); guitarLevel.setTextValueSuffix(" dB");
 
     slotSelector.onChange=[this]{loadSlot();}; modelSelector.onChange=[this]{updateModelLabels();pushControls();}; enabledButton.onClick=[this]{pushControls();};
+    routeMain.onClick=[this]{pushControls();}; routeClean.onClick=[this]{pushControls();}; routeSub.onClick=[this]{pushControls();};
     for(auto* s:{&drive,&tone,&level,&blend,&aux1,&aux2,&aux3}) s->onValueChange=[this]{pushControls();};
 
     dynamicsMode.onChange=[this]{ if(!updating) effectsRack.setDynamicsMode((HQEffectsRack::DynamicsMode)juce::jlimit(0,3,dynamicsMode.getSelectedId()-1)); updateDynamicsVisibility(); };
@@ -79,6 +81,7 @@ void PedalPage::loadSlot()
 {
     const int index=juce::jlimit(0,HQEffectsRack::pedalSlots-1,slotSelector.getSelectedId()-1); auto& c=effectsRack.pedalSlot(index); updating=true;
     enabledButton.setToggleState(c.enabled.load(),juce::dontSendNotification); modelSelector.setSelectedId(juce::jlimit(0,9,c.model.load())+1,juce::dontSendNotification);
+    const int mask=c.routeMask.load(); routeMain.setToggleState((mask&HQEffectsRack::routeMain)!=0,juce::dontSendNotification); routeClean.setToggleState((mask&HQEffectsRack::routeClean)!=0,juce::dontSendNotification); routeSub.setToggleState((mask&HQEffectsRack::routeSub)!=0,juce::dontSendNotification);
     drive.setValue(c.drive.load(),juce::dontSendNotification); tone.setValue(c.tone.load(),juce::dontSendNotification); level.setValue(c.levelDb.load(),juce::dontSendNotification); blend.setValue(c.mix.load(),juce::dontSendNotification);
     aux1.setValue(c.aux1.load(),juce::dontSendNotification); aux2.setValue(c.aux2.load(),juce::dontSendNotification); aux3.setValue(c.aux3.load(),juce::dontSendNotification); updating=false; updateModelLabels();
 }
@@ -86,23 +89,13 @@ void PedalPage::loadSlot()
 void PedalPage::pushControls()
 {
     if(updating)return; const int index=juce::jlimit(0,HQEffectsRack::pedalSlots-1,slotSelector.getSelectedId()-1); auto& c=effectsRack.pedalSlot(index);
-    c.enabled.store(enabledButton.getToggleState()); c.model.store(juce::jlimit(0,9,modelSelector.getSelectedId()-1)); c.drive.store((float)drive.getValue()); c.tone.store((float)tone.getValue()); c.levelDb.store((float)level.getValue()); c.mix.store((float)blend.getValue()); c.aux1.store((float)aux1.getValue()); c.aux2.store((float)aux2.getValue()); c.aux3.store((float)aux3.getValue());
+    int mask=0;if(routeMain.getToggleState())mask|=HQEffectsRack::routeMain;if(routeClean.getToggleState())mask|=HQEffectsRack::routeClean;if(routeSub.getToggleState())mask|=HQEffectsRack::routeSub;if(mask==0){mask=HQEffectsRack::routeMain;routeMain.setToggleState(true,juce::dontSendNotification);}
+    c.routeMask.store(mask); c.enabled.store(enabledButton.getToggleState()); c.model.store(juce::jlimit(0,9,modelSelector.getSelectedId()-1)); c.drive.store((float)drive.getValue()); c.tone.store((float)tone.getValue()); c.levelDb.store((float)level.getValue()); c.mix.store((float)blend.getValue()); c.aux1.store((float)aux1.getValue()); c.aux2.store((float)aux2.getValue()); c.aux3.store((float)aux3.getValue());
 }
 
-void PedalPage::pushGateControls()
-{
-    if(updating)return; auto& c=effectsRack.gateControl(); c.thresholdDb.store((float)gateThreshold.getValue()); c.rangeDb.store((float)gateRange.getValue()); c.ratio.store((float)gateRatio.getValue()); c.attackMs.store((float)gateAttack.getValue()); c.holdMs.store((float)gateHold.getValue()); c.releaseMs.store((float)gateRelease.getValue()); c.hysteresisDb.store((float)gateHysteresis.getValue()); c.sidechainHpHz.store((float)gateSidechainHp.getValue()); c.sidechainLpHz.store((float)gateSidechainLp.getValue());
-}
-
-void PedalPage::pushStudioCompControls()
-{
-    if(updating)return; auto& c=effectsRack.studioCompControl(); c.thresholdDb.store((float)compThreshold.getValue()); c.ratio.store((float)compRatio.getValue()); c.attackMs.store((float)compAttack.getValue()); c.releaseMs.store((float)compRelease.getValue()); c.kneeDb.store((float)compKnee.getValue()); c.makeupDb.store((float)compMakeup.getValue()); c.mix.store((float)compMix.getValue()); c.sidechainHpHz.store((float)compSidechainHp.getValue()); c.rms.store(compRms.getToggleState()); c.autoRelease.store(compAutoRelease.getToggleState()); c.autoMakeup.store(compAutoMakeup.getToggleState());
-}
-
-void PedalPage::pushGuitarCompControls()
-{
-    if(updating)return; auto& c=effectsRack.guitarCompControl(); c.sustain.store((float)guitarSustain.getValue()); c.attack.store((float)guitarAttack.getValue()); c.blend.store((float)guitarBlend.getValue()); c.levelDb.store((float)guitarLevel.getValue());
-}
+void PedalPage::pushGateControls(){if(updating)return; auto& c=effectsRack.gateControl(); c.thresholdDb.store((float)gateThreshold.getValue()); c.rangeDb.store((float)gateRange.getValue()); c.ratio.store((float)gateRatio.getValue()); c.attackMs.store((float)gateAttack.getValue()); c.holdMs.store((float)gateHold.getValue()); c.releaseMs.store((float)gateRelease.getValue()); c.hysteresisDb.store((float)gateHysteresis.getValue()); c.sidechainHpHz.store((float)gateSidechainHp.getValue()); c.sidechainLpHz.store((float)gateSidechainLp.getValue());}
+void PedalPage::pushStudioCompControls(){if(updating)return; auto& c=effectsRack.studioCompControl(); c.thresholdDb.store((float)compThreshold.getValue()); c.ratio.store((float)compRatio.getValue()); c.attackMs.store((float)compAttack.getValue()); c.releaseMs.store((float)compRelease.getValue()); c.kneeDb.store((float)compKnee.getValue()); c.makeupDb.store((float)compMakeup.getValue()); c.mix.store((float)compMix.getValue()); c.sidechainHpHz.store((float)compSidechainHp.getValue()); c.rms.store(compRms.getToggleState()); c.autoRelease.store(compAutoRelease.getToggleState()); c.autoMakeup.store(compAutoMakeup.getToggleState());}
+void PedalPage::pushGuitarCompControls(){if(updating)return; auto& c=effectsRack.guitarCompControl(); c.sustain.store((float)guitarSustain.getValue()); c.attack.store((float)guitarAttack.getValue()); c.blend.store((float)guitarBlend.getValue()); c.levelDb.store((float)guitarLevel.getValue());}
 
 void PedalPage::updateDynamicsVisibility()
 {
@@ -146,7 +139,7 @@ void PedalPage::paint(juce::Graphics& g)
 void PedalPage::resized()
 {
     auto r=getLocalBounds().reduced(24); title.setBounds(r.removeFromTop(38));
-    auto top=r.removeFromTop(38); slotSelector.setBounds(top.removeFromLeft(125).reduced(3)); modelSelector.setBounds(top.removeFromLeft(215).reduced(3)); enabledButton.setBounds(top.removeFromLeft(75).reduced(5)); description.setBounds(top);
+    auto top=r.removeFromTop(38); slotSelector.setBounds(top.removeFromLeft(125).reduced(3)); modelSelector.setBounds(top.removeFromLeft(215).reduced(3)); enabledButton.setBounds(top.removeFromLeft(65).reduced(5)); routeMain.setBounds(top.removeFromLeft(75)); routeClean.setBounds(top.removeFromLeft(80)); routeSub.setBounds(top.removeFromLeft(65)); description.setBounds(top);
     auto dynHead=r.removeFromTop(32); dynamicsTitle.setBounds(dynHead.removeFromLeft(110)); dynamicsMode.setBounds(dynHead.removeFromLeft(170).reduced(2)); grLabel.setBounds(dynHead.removeFromRight(90)); dynamicsHint.setBounds(dynHead);
     auto dynRow=r.removeFromTop(112);
     std::vector<juce::Slider*> visible;
