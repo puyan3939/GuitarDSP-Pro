@@ -22,20 +22,15 @@ endif()
 
 juce_add_gui_app(GuitarDSPPro PRODUCT_NAME "GuitarDSP-Pro")
 juce_generate_juce_header(GuitarDSPPro)
-
 target_sources(GuitarDSPPro PRIVATE
     src/Main.cpp src/MainComponent.cpp
     engine/AudioEngine.cpp engine/SignalChain.cpp
     dsp/SafetyLimiter.cpp dsp/LevelMeter.cpp
     dsp/amp/AmpStage.cpp dsp/amp/AmpEngine.cpp
-    hq_preload/dsp/amp/AmpEngineHQ.cpp
-    hq_preload/dsp/HQEffectsRack.cpp
-    hq_preload/dsp/cab/CabMicEngineHQ.cpp
+    hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/HQEffectsRack.cpp hq_preload/dsp/cab/CabMicEngineHQ.cpp
     ui/MainView.cpp ui/NavigationBar.cpp
-    ui/pages/AmpPage.cpp ui/pages/PedalPage.cpp ui/pages/CabPage.cpp
-    ui/pages/EffectsPage.cpp ui/pages/PerformancePage.cpp ui/pages/SettingsPage.cpp
+    ui/pages/AmpPage.cpp ui/pages/PedalPage.cpp ui/pages/CabPage.cpp ui/pages/EffectsPage.cpp ui/pages/PerformancePage.cpp ui/pages/SettingsPage.cpp
 )
-
 target_include_directories(GuitarDSPPro PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(GuitarDSPPro PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:GuitarDSPPro,JUCE_PRODUCT_NAME>" JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:GuitarDSPPro,JUCE_VERSION>")
 target_link_libraries(GuitarDSPPro PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_gui_extra)
@@ -54,14 +49,23 @@ target_include_directories(GuitarDSPRoutingTests PRIVATE ${CMAKE_CURRENT_SOURCE_
 target_compile_definitions(GuitarDSPRoutingTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(GuitarDSPRoutingTests PRIVATE juce::juce_dsp juce::juce_audio_basics)
 
+juce_add_console_app(GuitarDSPMatrixTests PRODUCT_NAME "GuitarDSP-Matrix-Tests")
+juce_generate_juce_header(GuitarDSPMatrixTests)
+target_sources(GuitarDSPMatrixTests PRIVATE tests/RoutingMatrixSmoke.cpp hq_preload/dsp/HQEffectsRack.cpp)
+target_include_directories(GuitarDSPMatrixTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(GuitarDSPMatrixTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(GuitarDSPMatrixTests PRIVATE juce::juce_dsp juce::juce_audio_basics)
+
 include(CTest)
 if (BUILD_TESTING)
     add_test(NAME hq_dsp_smoke COMMAND GuitarDSPDSPTests)
     add_test(NAME parallel_rig_smoke COMMAND GuitarDSPRoutingTests)
+    add_test(NAME routing_matrix_smoke COMMAND GuitarDSPMatrixTests)
 endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(GuitarDSPPro PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(GuitarDSPDSPTests PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(GuitarDSPRoutingTests PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(GuitarDSPMatrixTests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
