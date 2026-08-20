@@ -53,6 +53,15 @@ target_include_directories(GuitarDSPReferenceTests PRIVATE ${CMAKE_CURRENT_SOURC
 target_compile_definitions(GuitarDSPReferenceTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(GuitarDSPReferenceTests PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
 
+# Offline measured-data calibration tool. It is intentionally not a CTest so the
+# fast PR check never depends on external network data.
+juce_add_console_app(GuitarDSPJVMFit PRODUCT_NAME "GuitarDSP-JVM-Measured-Fit")
+juce_generate_juce_header(GuitarDSPJVMFit)
+target_sources(GuitarDSPJVMFit PRIVATE tests/JVMMeasuredFit.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp)
+target_include_directories(GuitarDSPJVMFit PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(GuitarDSPJVMFit PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(GuitarDSPJVMFit PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
+
 # PR/push validation: the fast test targets also compile the GUI app so analyzer/UI
 # changes cannot pass CI without a full C++ compile. Tests themselves remain headless.
 add_dependencies(GuitarDSPDSPTests GuitarDSPPro)
@@ -68,4 +77,5 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(GuitarDSPPro PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(GuitarDSPDSPTests PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(GuitarDSPReferenceTests PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(GuitarDSPJVMFit PRIVATE -Wall -Wextra -Wpedantic)
 endif()

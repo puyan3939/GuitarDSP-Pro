@@ -36,6 +36,15 @@ public:
     // claim of measurement-matching any individual vintage amplifier specimen.
     static AmpHQParams makeBassman5F6AReference();
 
+    // Marshall JVM410H OD1 target used by the offline measured-data fitter.
+    // The public DAFx23 dataset was recorded at Gain=5; bass/middle/treble are
+    // normalised 0..1 controls corresponding to the published 0..10 settings.
+    // Until the measured-data calibration workflow has been applied, this is a
+    // topology-informed starting point rather than a measurement-match claim.
+    static AmpHQParams makeJVM410HOD1Reference(float bass=0.5f,
+                                               float middle=0.5f,
+                                               float treble=0.5f);
+
 private:
     struct TubeStage;
     struct Channel;

@@ -44,38 +44,24 @@ static AmpHQParams defaults()
 AmpHQParams AmpEngineHQ::makeBassman5F6AReference()
 {
     AmpHQParams p = defaults();
-
-    // A low-drive tanh followed by reciprocal gain is used as an approximately
-    // linear buffer for topology slots that are not active stages in the 5F6-A.
-    // This lets the fixed 20-slot engine represent a much shorter real circuit
-    // without changing the existing generic HQ voicing.
     for (auto& s : p.stage)
         s = { 20.0f, 18000.0f, 0.25f, 0.0f, 0.0f, 0.0f, 18000.0f, 4.0f };
 
-    // Input / 12AY7-like first voltage stage: lower gain and softer asymmetric onset.
     p.stage[0] = { 32.0f, 14500.0f, 0.82f, 0.006f, 0.12f, 0.045f, 11200.0f, 1.70f };
-    // Interstage coupling and second voltage stage.
     p.stage[1] = { 48.0f, 16000.0f, 0.25f, 0.0f, 0.0f, 0.0f, 15500.0f, 4.0f };
     p.stage[2] = { 42.0f, 13200.0f, 1.32f, 0.010f, 0.18f, 0.070f, 9800.0f, 1.08f };
-    // DC-coupled cathode-follower approximation: near-unity, high headroom, low distortion.
     p.stage[3] = { 24.0f, 17000.0f, 0.30f, 0.002f, 0.04f, 0.025f, 16000.0f, 3.22f };
 
-    // Approximate the characteristic Bassman tone-stack contour at noon: broad
-    // low/treble recovery surrounding a clearly recessed mid band.
     p.bassDb = 3.4f;
     p.midDb = -8.6f;
     p.trebleDb = 4.2f;
     p.stage[10] = { 28.0f, 17500.0f, 0.25f, 0.0f, 0.0f, 0.0f, 17000.0f, 3.35f };
 
-    // Recovery / phase-inverter drive. The engine's PI already models unequal
-    // positive/negative paths, so only moderate additional asymmetry is needed here.
     p.stage[11] = { 45.0f, 14500.0f, 0.78f, 0.006f, 0.10f, 0.045f, 11800.0f, 1.45f };
     p.stage[12] = { 28.0f, 17500.0f, 0.25f, 0.0f, 0.0f, 0.0f, 17000.0f, 4.0f };
     p.stage[13] = { 32.0f, 16500.0f, 0.25f, 0.0f, 0.0f, 0.0f, 16000.0f, 4.0f };
     p.stage[14] = { 34.0f, 14000.0f, 1.10f, 0.008f, 0.16f, 0.080f, 10800.0f, 1.02f };
 
-    // Fixed-bias 6L6/5881-style power section: moderate NFB, noticeable rectifier
-    // sag and bias excursion, but less transformer saturation than the generic model.
     p.stage[16] = { 38.0f, 14500.0f, 0.42f, 0.0f, 0.03f, 0.020f, 13200.0f, 2.35f };
     p.stage[17] = { 48.0f, 11800.0f, 1.78f, 0.018f, 0.22f, 0.16f, 7800.0f, 0.92f };
     p.stage[18] = { 24.0f, 17500.0f, 0.25f, 0.0f, 0.0f, 0.0f, 17000.0f, 4.0f };
@@ -88,6 +74,47 @@ AmpHQParams AmpEngineHQ::makeBassman5F6AReference()
     p.biasExcursion = 0.18f;
     p.transformerSaturation = 0.20f;
     p.outputDb = -10.5f;
+    return p;
+}
+
+AmpHQParams AmpEngineHQ::makeJVM410HOD1Reference(float bass, float middle, float treble)
+{
+    bass = juce::jlimit(0.0f, 1.0f, bass);
+    middle = juce::jlimit(0.0f, 1.0f, middle);
+    treble = juce::jlimit(0.0f, 1.0f, treble);
+
+    AmpHQParams p = defaults();
+    for (auto& s : p.stage)
+        s = { 20.0f, 18000.0f, 0.25f, 0.0f, 0.0f, 0.0f, 18000.0f, 4.0f };
+
+    // OD1/Gain=5 topology-informed starting point. The measured-data fitter
+    // estimates compact corrections around these values instead of learning an
+    // opaque black-box replacement for the HQ engine.
+    p.stage[0] = { 28.0f, 16000.0f, 1.30f, 0.008f, 0.12f, 0.035f, 13500.0f, 1.28f };
+    p.stage[2] = { 52.0f, 13200.0f, 2.35f, 0.018f, 0.22f, 0.075f, 10200.0f, 0.94f };
+    p.stage[4] = { 78.0f, 11200.0f, 3.10f, 0.032f, 0.30f, 0.110f, 8600.0f, 0.78f };
+    p.stage[6] = { 105.0f, 9800.0f, 3.55f, 0.045f, 0.38f, 0.145f, 7200.0f, 0.70f };
+    p.stage[8] = { 58.0f, 13200.0f, 1.38f, 0.010f, 0.14f, 0.060f, 10800.0f, 0.94f };
+
+    p.bassDb = -4.0f + 10.5f * bass;
+    p.midDb = -7.0f + 11.5f * middle;
+    p.trebleDb = -5.0f + 13.0f * treble;
+
+    p.stage[10] = { 28.0f, 16500.0f, 0.30f, 0.0f, 0.02f, 0.020f, 15000.0f, 3.18f };
+    p.stage[11] = { 44.0f, 14200.0f, 1.05f, 0.010f, 0.16f, 0.070f, 11200.0f, 1.22f };
+    p.stage[14] = { 38.0f, 13200.0f, 1.22f, 0.012f, 0.20f, 0.090f, 10200.0f, 1.02f };
+
+    p.stage[16] = { 36.0f, 14500.0f, 0.42f, 0.0f, 0.04f, 0.025f, 13200.0f, 2.30f };
+    p.stage[17] = { 46.0f, 11800.0f, 1.42f, 0.014f, 0.18f, 0.120f, 8300.0f, 0.94f };
+    p.stage[19] = { 30.0f, 8800.0f, 0.42f, 0.002f, 0.05f, 0.030f, 8000.0f, 2.18f };
+
+    p.sag = 0.18f;
+    p.sagRecoveryMs = 72.0f;
+    p.damping = 0.58f;
+    p.presence = 0.48f;
+    p.biasExcursion = 0.12f;
+    p.transformerSaturation = 0.24f;
+    p.outputDb = -12.0f;
     return p;
 }
 
