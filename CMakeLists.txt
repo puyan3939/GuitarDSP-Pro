@@ -46,12 +46,21 @@ target_include_directories(GuitarDSPDSPTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_compile_definitions(GuitarDSPDSPTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(GuitarDSPDSPTests PRIVATE juce::juce_dsp juce::juce_audio_basics)
 
+juce_add_console_app(GuitarDSPRoutingTests PRODUCT_NAME "GuitarDSP-Routing-Tests")
+juce_generate_juce_header(GuitarDSPRoutingTests)
+target_sources(GuitarDSPRoutingTests PRIVATE tests/ParallelRigSmoke.cpp)
+target_include_directories(GuitarDSPRoutingTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(GuitarDSPRoutingTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(GuitarDSPRoutingTests PRIVATE juce::juce_dsp juce::juce_audio_basics)
+
 include(CTest)
 if (BUILD_TESTING)
     add_test(NAME hq_dsp_smoke COMMAND GuitarDSPDSPTests)
+    add_test(NAME parallel_rig_smoke COMMAND GuitarDSPRoutingTests)
 endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(GuitarDSPPro PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(GuitarDSPDSPTests PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(GuitarDSPRoutingTests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
