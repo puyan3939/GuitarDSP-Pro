@@ -5,6 +5,7 @@
 #include "../hq_preload/dsp/amp/AmpEngineHQ.h"
 #include "../hq_preload/dsp/HQEffectsRack.h"
 #include "../hq_preload/dsp/cab/CabMicEngineHQ.h"
+#include "../hq_preload/dsp/routing/ParallelRigHQ.h"
 
 class SignalChain
 {
@@ -30,6 +31,7 @@ public:
 private:
     void copyDetectedMonoToStereo(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void applyInputGain(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
+    void captureParallelTap(const juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void processLegacyAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void processHQAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void applyStartupFadeAndLimiter(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
@@ -37,11 +39,13 @@ private:
     juce::SmoothedValue<float> inputGain;
     juce::SmoothedValue<float> startupFade;
     juce::AudioBuffer<float> ampWorkBuffer;
+    juce::AudioBuffer<float> parallelTapBuffer;
 
     AmpEngine ampEngine;
     guitardsp::hq::AmpEngineHQ hqAmpEngine;
     guitardsp::hq::HQEffectsRack hqEffects;
     guitardsp::hq::CabMicEngineHQ cabMic;
+    guitardsp::hq::ParallelRigHQ parallelRig;
     SafetyLimiter limiter;
 
     std::atomic<float> inputGainDb { -6.0f };
