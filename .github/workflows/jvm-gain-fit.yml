@@ -1,0 +1,125 @@
+name: JVM410H Gain Measured Fit
+
+on:
+  push:
+    branches:
+      - agent/signal-analyzer
+    paths:
+      - '.github/workflows/jvm-gain-fit.yml'
+      - 'CMakeLists.txt'
+      - 'hq_preload/dsp/amp/**'
+      - 'tests/JVMGainFit.cpp'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guitardsp-jvm-gain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gain-fit:
+    name: Fit measured JVM410H OD1 Gain axis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout GuitarDSP-Pro
+        uses: actions/checkout@v5
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build git pkg-config ccache curl unzip \
+            libasound2-dev libjack-jackd2-dev \
+            libfreetype6-dev libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev libxi-dev \
+            libglu1-mesa-dev mesa-common-dev libegl-dev
+      - name: Checkout JUCE 9.0.0
+        uses: actions/checkout@v5
+        with:
+          repository: juce-framework/JUCE
+          ref: 9.0.0
+          path: _deps/JUCE
+          fetch-depth: 1
+      - name: Cache ToneTwisT JVM archive
+        id: cache-jvm
+        uses: actions/cache@v4
+        with:
+          path: _dataset-cache/Marshall-JVM410H-ChOD1.zip
+          key: tonetwist-jvm410h-chod1-zenodo10892012-v1
+      - name: Download ToneTwisT JVM410H parametric dataset
+        if: steps.cache-jvm.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p _dataset-cache
+          curl -fL --retry 5 --retry-delay 5 \
+            'https://zenodo.org/records/10892012/files/Marshall-JVM410H-ChOD1.zip?download=1' \
+            -o _dataset-cache/Marshall-JVM410H-ChOD1.zip
+      - name: Extract measured Gain pairs
+        shell: python
+        run: |
+          import pathlib, re, shutil, zipfile
+          archive = pathlib.Path('_dataset-cache/Marshall-JVM410H-ChOD1.zip')
+          if not archive.exists() or archive.stat().st_size < 1024:
+              raise SystemExit('ToneTwisT JVM archive missing or empty')
+          extract = pathlib.Path('jvm-gain-extracted')
+          if extract.exists(): shutil.rmtree(extract)
+          with zipfile.ZipFile(archive) as z: z.extractall(extract)
+          inputs = {p.name: p for p in extract.rglob('*.input.wav')}
+          targets = sorted(extract.rglob('*.target.wav'))
+          pattern = re.compile(r'^B([0-9.]+)_M([0-9.]+)_T([0-9.]+)_G([0-9.]+)$', re.I)
+          def knob(raw):
+              v = float(raw)
+              return v / 10.0 if v > 10.0 else v
+          groups = {}
+          for target in targets:
+              first, sep, rest = target.name.partition('.')
+              if not sep: continue
+              m = pattern.match(first)
+              if not m: continue
+              b, mid, treble, gain = [knob(x) for x in m.groups()]
+              if max(abs(b-5.0), abs(mid-5.0), abs(treble-5.0)) > 0.01: continue
+              input_name = rest.replace('.target.wav', '.input.wav')
+              if input_name not in inputs: continue
+              groups.setdefault(input_name, {})[round(gain, 3)] = (inputs[input_name], target)
+          wanted = [0.0, 1.0, 2.0, 4.0, 5.0, 6.0, 8.0, 10.0]
+          selected_base = None; selected = None
+          for base, by_gain in groups.items():
+              if all(g in by_gain for g in wanted): selected_base, selected = base, by_gain; break
+          if selected is None:
+              coverage = sorted(((len(v), k, sorted(v)) for k, v in groups.items()), reverse=True)
+              raise SystemExit(f'No centre-tone input covers all Gain values. Best coverage: {coverage[:5]}')
+          out = pathlib.Path('jvm-gain-data'); out.mkdir(exist_ok=True)
+          lines = ['# split name bass middle treble gain input target']; holdout = {2.0, 6.0}
+          for g in wanted:
+              inp, target = selected[g]; tag = str(int(g)); in_dest = out / f'g{tag}_input.wav'; target_dest = out / f'g{tag}_target.wav'
+              shutil.copy2(inp, in_dest); shutil.copy2(target, target_dest)
+              split = 'holdout' if g in holdout else 'fit'
+              lines.append(f'{split} G{tag} 5 5 5 {g:g} {in_dest.name} {target_dest.name}')
+          (out / 'manifest.tsv').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('Selected dry input:', selected_base); print((out / 'manifest.tsv').read_text())
+      - name: Configure Gain fitter
+        run: |
+          cmake -S . -B build-gain -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF \
+            -DGUITARDSP_FETCH_FACTORY_IRS=OFF \
+            -DGUITARDSP_JUCE_PATH="${{ github.workspace }}/_deps/JUCE"
+      - name: Build Gain fitter
+        run: cmake --build build-gain --target GuitarDSPJVMGainFit --parallel 4
+      - name: Fit Gain axis and score unseen Gain values
+        run: |
+          set -o pipefail
+          ./build-gain/GuitarDSPJVMGainFit_artefacts/Release/GuitarDSPJVMGainFit \
+            jvm-gain-data/manifest.tsv jvm-gain-fit-report.json | tee jvm-gain-fit-log.txt
+      - name: Publish Gain fit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm410h-od1-gain-fit
+          path: |
+            jvm-gain-fit-report.json
+            jvm-gain-fit-log.txt
+            jvm-gain-data/manifest.tsv
+          if-no-files-found: error
+          retention-days: 30
