@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(GuitarDSPPro VERSION 0.2.0 LANGUAGES C CXX)
+project(GuitarDSPPro VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -33,7 +33,7 @@ target_sources(GuitarDSPPro PRIVATE
     hq_preload/dsp/amp/JvmToneStack.cpp
     hq_preload/dsp/HQEffectsRack.cpp
     hq_preload/dsp/cab/CabMicEngineHQ.cpp
-    ui/MainView.cpp ui/NavigationBar.cpp ui/SignalAnalyzerPanel.cpp
+    ui/MainView.cpp ui/NavigationBar.cpp ui/SignalAnalyzerPanel.cpp ui/MeasurementLabPanel.cpp
     ui/pages/AmpPage.cpp ui/pages/PedalPage.cpp ui/pages/CabPage.cpp ui/pages/EffectsPage.cpp ui/pages/SettingsPage.cpp
 )
 
@@ -85,6 +85,20 @@ target_include_directories(GuitarDSPJVMPhysicalFit PRIVATE ${CMAKE_CURRENT_SOURC
 target_compile_definitions(GuitarDSPJVMPhysicalFit PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(GuitarDSPJVMPhysicalFit PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
 
+juce_add_console_app(GuitarDSPJVMGainFit PRODUCT_NAME "GuitarDSP-JVM-Gain-Fit")
+juce_generate_juce_header(GuitarDSPJVMGainFit)
+target_sources(GuitarDSPJVMGainFit PRIVATE tests/JVMGainFit.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/amp/JvmToneStack.cpp)
+target_include_directories(GuitarDSPJVMGainFit PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(GuitarDSPJVMGainFit PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(GuitarDSPJVMGainFit PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
+
+juce_add_console_app(GuitarDSPMeasurementLab PRODUCT_NAME "GuitarDSP-Measurement-Lab")
+juce_generate_juce_header(GuitarDSPMeasurementLab)
+target_sources(GuitarDSPMeasurementLab PRIVATE tests/MeasurementLab.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/amp/JvmToneStack.cpp)
+target_include_directories(GuitarDSPMeasurementLab PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(GuitarDSPMeasurementLab PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(GuitarDSPMeasurementLab PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
+
 add_dependencies(GuitarDSPDSPTests GuitarDSPPro)
 add_dependencies(GuitarDSPReferenceTests GuitarDSPPro)
 
@@ -100,4 +114,6 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(GuitarDSPReferenceTests PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(GuitarDSPJVMFit PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(GuitarDSPJVMPhysicalFit PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(GuitarDSPJVMGainFit PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(GuitarDSPMeasurementLab PRIVATE -Wall -Wextra -Wpedantic)
 endif()
