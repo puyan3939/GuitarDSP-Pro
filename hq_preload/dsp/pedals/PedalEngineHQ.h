@@ -47,7 +47,7 @@ public:
         inputHP.reset(); inputLP.reset(); couplingHP1.reset(); couplingHP2.reset();
         stageLP1.reset(); stageLP2.reset(); outputLP.reset(); postDc.reset(); midPeak.reset();
         biasMemory.reset(); supplyEnv.reset(); octaveDc.reset(); gateEnv.reset();
-        transistorFeedback=0.0f; velcroGateOpen=false;
+        transistorFeedback=0.0f; fuzzFeedback=0.0f; velcroGateOpen=false;
     }
 
     void setType(PedalType t)
@@ -81,9 +81,6 @@ public:
     {
         const int n=mono.getNumSamples(); if(n<=0)return;
 
-        // HQ Octaver has its own dedicated 16x resampling path. The external rig
-        // remains at the device sample rate while the moving pitch read heads and
-        // cubic interpolation run at the higher internal rate.
         if(type==PedalType::hqOctaver)
         {
             pitchOctaver.processBlock(mono);
@@ -247,9 +244,22 @@ private:
         if(!velcroGateOpen && envelope>openTh) velcroGateOpen=true;
         else if(velcroGateOpen && envelope<closeTh) velcroGateOpen=false;
 
+        // AUX1 arrives through the generic BIAS mapping (-0.2..+0.2). For this
+        // topology it is reinterpreted as STABILITY: high = conventional/stable,
+        // low = stronger positive feedback and Fuzz-Factory-like edge/ring.
+        const float stability=juce::jlimit(0.0f,1.0f,(params.bias+0.2f)/0.4f);
+        const float feedbackAmount=(1.0f-stability)*(0.18f+0.50f*d);
+        const float feedbackInput=juce::jlimit(-1.5f,1.5f,x+feedbackAmount*fuzzFeedback);
+
         const float collapsingBias=0.025f+0.22f*starve+(1.0f-supply)*0.18f;
-        const float q1=transistor(x,1.7f+4.0f*d,collapsingBias,0.95f,supply);
+        const float q1=transistor(feedbackInput,1.7f+4.0f*d,collapsingBias,0.95f,supply);
         const float q2=transistor(couplingHP1.process(q1),1.5f+4.6f*d,-0.45f*collapsingBias,0.98f,juce::jmax(0.10f,supply*0.82f));
+
+        // Bounded stateful feedback can ring after a note when STABILITY is low,
+        // but exact digital silence remains silent because no noise is injected.
+        fuzzFeedback=0.992f*fuzzFeedback+0.008f*q2;
+        fuzzFeedback=juce::jlimit(-1.2f,1.2f,fuzzFeedback);
+
         const float gateGain=velcroGateOpen ? 1.0f : juce::jlimit(0.0f,1.0f,envelope/(openTh+1.0e-8f));
         return outputLP.process(q2*gateGain);
     }
@@ -288,6 +298,7 @@ private:
     Slew biasMemory,supplyEnv,octaveDc,gateEnv;
 
     float transistorFeedback=0.0f;
+    float fuzzFeedback=0.0f;
     bool velcroGateOpen=false;
 };
 }
