@@ -4,6 +4,7 @@
 AudioEngine::AudioEngine()
 {
     liveAnalyzerTaps.setEnabled(false);
+    latencyProbe = guitardsp::LatencyProbe::makeSequence();
 }
 
 AudioEngine::~AudioEngine()
@@ -53,14 +54,21 @@ void AudioEngine::prepare(double sampleRate, int maximumBlockSize)
         analyzerBuffer.setSize(2, analyzerRenderSamples, false, false, true); analyzerPrepared.store(true, std::memory_order_release);
     }
     ioBuffer.setSize(2, maximumBlockSize, false, false, true);
+    latencyCapture.setSize(1, latencyCaptureLength, false, false, true);
+    latencyCapture.clear(); latencyWriteIndex = 0;
+    latencyState.store(0, std::memory_order_release);
+    measuredRoundTripSamples.store(-1, std::memory_order_relaxed);
+    latencyCorrelation.store(0.0f, std::memory_order_relaxed);
     for (auto& meter : inputMeters) meter.reset(); for (auto& meter : outputMeters) meter.reset();
     for (auto& value : inputRmsDb) value.store(-100.0f, std::memory_order_relaxed); for (auto& value : outputRmsDb) value.store(-100.0f, std::memory_order_relaxed);
 }
 
 void AudioEngine::release()
 {
+    latencyState.store(0, std::memory_order_release);
     signalChain.reset(); liveAnalyzerTaps.clear(); ioBuffer.setSize(2, 0);
     { const juce::ScopedLock lock(analyzerLock); analyzerPrepared.store(false, std::memory_order_relaxed); analyzerSignalChain.reset(); testAnalyzerTaps.clear(); analyzerBuffer.setSize(2, 0); }
+    latencyCapture.setSize(1, 0);
     for (auto& meter : inputMeters) meter.reset(); for (auto& meter : outputMeters) meter.reset();
     for (auto& value : inputRmsDb) value.store(-100.0f, std::memory_order_relaxed); for (auto& value : outputRmsDb) value.store(-100.0f, std::memory_order_relaxed);
 }
@@ -100,11 +108,75 @@ void AudioEngine::renderAnalyzerTest(AnalyzerTestMode mode, float frequencyHz, f
     analyzerSignalChain.process(analyzerBuffer, 0, analyzerRenderSamples);
 }
 
-void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device) { if (device != nullptr) prepare(device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples()); }
-void AudioEngine::audioDeviceStopped() { release(); }
+bool AudioEngine::startRoundTripLatencyMeasurement()
+{
+    if (latencyState.load(std::memory_order_acquire) == 1 || latencyCapture.getNumSamples() < latencyCaptureLength) return false;
+    latencyCapture.clear(); latencyWriteIndex = 0;
+    measuredRoundTripSamples.store(-1, std::memory_order_relaxed); latencyCorrelation.store(0.0f, std::memory_order_relaxed);
+    latencyState.store(1, std::memory_order_release); return true;
+}
+
+void AudioEngine::processLatencyProbeBlock(const float* const* inputChannelData, int numInputChannels,
+                                           float* const* outputChannelData, int numOutputChannels,
+                                           int numSamples) noexcept
+{
+    for (int ch = 0; ch < numOutputChannels; ++ch) if (outputChannelData[ch] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[ch], numSamples);
+    auto* capture = latencyCapture.getNumSamples() >= latencyCaptureLength ? latencyCapture.getWritePointer(0) : nullptr;
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const int index = latencyWriteIndex++;
+        if (index >= latencyCaptureLength) break;
+        if (capture != nullptr) capture[index] = (numInputChannels > 0 && inputChannelData[0] != nullptr) ? inputChannelData[0][i] : 0.0f;
+        const int probeIndex = index - latencyProbeLeadIn;
+        if (probeIndex >= 0 && probeIndex < (int)latencyProbe.size() && numOutputChannels > 0 && outputChannelData[0] != nullptr)
+            outputChannelData[0][i] = latencyProbe[(size_t)probeIndex];
+    }
+    if (latencyWriteIndex >= latencyCaptureLength) latencyState.store(2, std::memory_order_release);
+}
+
+void AudioEngine::finaliseRoundTripLatencyMeasurement()
+{
+    if (latencyState.load(std::memory_order_acquire) != 2) return;
+    float correlation = 0.0f;
+    const int detectedStart = guitardsp::LatencyProbe::estimateDelaySamples(latencyProbe, latencyCapture.getReadPointer(0), latencyCapture.getNumSamples(), correlation);
+    const int delay = detectedStart >= 0 ? detectedStart - latencyProbeLeadIn : -1;
+    latencyCorrelation.store(correlation, std::memory_order_relaxed);
+    measuredRoundTripSamples.store(std::abs(correlation) >= 0.30f && delay >= 0 ? delay : -1, std::memory_order_relaxed);
+    latencyState.store(3, std::memory_order_release);
+}
+
+int AudioEngine::measureCurrentDspLatencySamples()
+{
+    if (!analyzerPrepared.load(std::memory_order_acquire)) return -1;
+    const juce::ScopedLock lock(analyzerLock);
+    if (!analyzerPrepared.load(std::memory_order_relaxed) || analyzerBuffer.getNumSamples() < analyzerRenderSamples) return -1;
+    signalChain.copySettingsTo(analyzerSignalChain); analyzerSignalChain.reset(); testAnalyzerTaps.clear(); analyzerBuffer.clear();
+    constexpr int impulseIndex = 256;
+    analyzerBuffer.setSample(0, impulseIndex, 0.20f); analyzerBuffer.setSample(1, impulseIndex, 0.20f);
+    analyzerSignalChain.process(analyzerBuffer, 0, analyzerRenderSamples);
+    const auto* data = analyzerBuffer.getReadPointer(0); float peak = 0.0f; int peakIndex = impulseIndex;
+    for (int i = impulseIndex; i < analyzerRenderSamples; ++i) { const float magnitude = std::abs(data[i]); if (magnitude > peak) { peak = magnitude; peakIndex = i; } }
+    return peak > 1.0e-8f ? peakIndex - impulseIndex : -1;
+}
+
+void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
+{
+    if (device != nullptr)
+    {
+        reportedInputLatencySamples.store(device->getInputLatencyInSamples(), std::memory_order_relaxed);
+        reportedOutputLatencySamples.store(device->getOutputLatencyInSamples(), std::memory_order_relaxed);
+        prepare(device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());
+    }
+}
+
+void AudioEngine::audioDeviceStopped()
+{
+    reportedInputLatencySamples.store(0, std::memory_order_relaxed); reportedOutputLatencySamples.store(0, std::memory_order_relaxed); release();
+}
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData,int numInputChannels,float* const* outputChannelData,int numOutputChannels,int numSamples,const juce::AudioIODeviceCallbackContext&)
 {
+    if (latencyState.load(std::memory_order_acquire) == 1) { processLatencyProbeBlock(inputChannelData, numInputChannels, outputChannelData, numOutputChannels, numSamples); return; }
     ioBuffer.setSize(2, numSamples, false, false, true); ioBuffer.clear();
     const int inputsToCopy = juce::jmin(2, numInputChannels);
     for (int ch = 0; ch < inputsToCopy; ++ch) if (inputChannelData[ch] != nullptr) juce::FloatVectorOperations::copy(ioBuffer.getWritePointer(ch), inputChannelData[ch], numSamples);
