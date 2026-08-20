@@ -17,7 +17,8 @@ constexpr int fftOrder = 12;
 constexpr int fftSize = 1 << fftOrder;
 constexpr int scoreSamples = 4096;
 constexpr int prerollSamples = 4096;
-constexpr int maxAlignmentLag = 192;
+constexpr int fineAlignmentLag = 384;
+constexpr int envelopeHop = 128;
 constexpr int parameterCount = 11;
 
 struct Clip
@@ -28,6 +29,7 @@ struct Clip
     double sampleRate = 44100.0;
     std::vector<float> input;
     std::vector<float> target;
+    int baseLag = 0;
     int segmentStart = 0;
     int scoreStart = 0;
 };
@@ -102,17 +104,104 @@ bool loadMono(juce::AudioFormatManager& formats,
     return true;
 }
 
-int chooseScoreStart(const std::vector<float>& input, int nAvailable)
+std::vector<float> makeEnvelope(const std::vector<float>& samples)
 {
-    const int n = juce::jmin(static_cast<int>(input.size()), nAvailable);
-    if (n <= scoreSamples)
+    const int frames = static_cast<int>(samples.size()) / envelopeHop;
+    std::vector<float> envelope(static_cast<size_t>(juce::jmax(0, frames)), 0.0f);
+    for (int frame = 0; frame < frames; ++frame)
+    {
+        double energy = 0.0;
+        const int start = frame * envelopeHop;
+        for (int i = 0; i < envelopeHop; ++i)
+        {
+            const double x = samples[static_cast<size_t>(start + i)];
+            energy += x * x;
+        }
+        envelope[static_cast<size_t>(frame)] = static_cast<float>(std::sqrt(energy / envelopeHop));
+    }
+    return envelope;
+}
+
+int estimateBaseLag(const std::vector<float>& input,
+                    const std::vector<float>& target,
+                    float& bestCorrelation)
+{
+    const auto inputEnvelope = makeEnvelope(input);
+    const auto targetEnvelope = makeEnvelope(target);
+    const int inputFrames = static_cast<int>(inputEnvelope.size());
+    const int targetFrames = static_cast<int>(targetEnvelope.size());
+    const int shorter = juce::jmin(inputFrames, targetFrames);
+    if (shorter < 32)
+    {
+        bestCorrelation = 0.0f;
+        return 0;
+    }
+
+    // Search up to about three seconds at 44.1 kHz. Published listening pairs
+    // may be cropped at different points, so a device-latency-only window is not enough.
+    const int maxLagFrames = juce::jmin(1024, shorter - 16);
+    const int minimumOverlap = juce::jmax(32, shorter * 2 / 5);
+    float bestAbsCorrelation = -1.0f;
+    int bestLagFrames = 0;
+    bestCorrelation = 0.0f;
+
+    for (int lag = -maxLagFrames; lag <= maxLagFrames; ++lag)
+    {
+        const int inputStart = juce::jmax(0, -lag);
+        const int targetStart = juce::jmax(0, lag);
+        const int overlap = juce::jmin(inputFrames - inputStart, targetFrames - targetStart);
+        if (overlap < minimumOverlap)
+            continue;
+
+        double meanInput = 0.0, meanTarget = 0.0;
+        for (int i = 0; i < overlap; ++i)
+        {
+            meanInput += inputEnvelope[static_cast<size_t>(inputStart + i)];
+            meanTarget += targetEnvelope[static_cast<size_t>(targetStart + i)];
+        }
+        meanInput /= overlap;
+        meanTarget /= overlap;
+
+        double dot = 0.0, inputEnergy = 0.0, targetEnergy = 0.0;
+        for (int i = 0; i < overlap; ++i)
+        {
+            const double x = inputEnvelope[static_cast<size_t>(inputStart + i)] - meanInput;
+            const double y = targetEnvelope[static_cast<size_t>(targetStart + i)] - meanTarget;
+            dot += x * y;
+            inputEnergy += x * x;
+            targetEnergy += y * y;
+        }
+
+        const float correlation = static_cast<float>(dot / std::sqrt(juce::jmax(1.0e-24, inputEnergy * targetEnergy)));
+        if (std::abs(correlation) > bestAbsCorrelation)
+        {
+            bestAbsCorrelation = std::abs(correlation);
+            bestCorrelation = correlation;
+            bestLagFrames = lag;
+        }
+    }
+    return bestLagFrames * envelopeHop;
+}
+
+int chooseScoreStart(const std::vector<float>& input,
+                     int targetSize,
+                     int baseLag)
+{
+    const int inputSize = static_cast<int>(input.size());
+    if (inputSize <= scoreSamples)
         return 0;
 
-    const int first = juce::jmin(prerollSamples, juce::jmax(0, n - scoreSamples));
+    // Keep the score window valid in both source and reference even after fine alignment.
+    const int first = juce::jmax(prerollSamples,
+                                 -baseLag + fineAlignmentLag);
+    const int last = juce::jmin(inputSize - scoreSamples,
+                                targetSize - scoreSamples - baseLag - fineAlignmentLag);
+    if (last < first)
+        return juce::jlimit(0, juce::jmax(0, inputSize - scoreSamples), inputSize / 3);
+
     int bestStart = first;
     double bestEnergy = -1.0;
-
-    for (int start = first; start + scoreSamples <= n; start += 1024)
+    for (int start = first; start <= last; start += 1024)
     {
         double energy = 0.0;
         for (int i = 0; i < scoreSamples; ++i)
@@ -180,14 +269,20 @@ bool loadManifest(const juce::File& manifest, std::vector<Clip>& clips)
         }
 
         clip.sampleRate = inRate;
-        const int available = juce::jmin(static_cast<int>(clip.input.size()), static_cast<int>(clip.target.size()));
-        if (available < 2048)
+        if (clip.input.size() < 2048 || clip.target.size() < 2048)
         {
             std::cerr << "Clip too short: " << clip.name << '\n';
             return false;
         }
-        clip.scoreStart = chooseScoreStart(clip.input, available);
+
+        float envelopeCorrelation = 0.0f;
+        clip.baseLag = estimateBaseLag(clip.input, clip.target, envelopeCorrelation);
+        clip.scoreStart = chooseScoreStart(clip.input, static_cast<int>(clip.target.size()), clip.baseLag);
         clip.segmentStart = juce::jmax(0, clip.scoreStart - prerollSamples);
+        std::cout << "ALIGN " << clip.name
+                  << " baseLag=" << clip.baseLag
+                  << " envelopeCorr=" << envelopeCorrelation
+                  << " scoreStart=" << clip.scoreStart << '\n';
         clips.push_back(std::move(clip));
     }
 
@@ -221,9 +316,9 @@ guitardsp::hq::AmpHQParams parametersFor(const Clip& clip, const Candidate& c)
 
 RenderedClip renderClip(guitardsp::hq::AmpEngineHQ& amp, const Clip& clip, const Candidate& c)
 {
-    const int targetEnd = juce::jmin(static_cast<int>(clip.input.size()), static_cast<int>(clip.target.size()));
-    const int desiredScore = juce::jmin(scoreSamples, targetEnd - clip.scoreStart);
-    const int segmentEnd = juce::jmin(targetEnd, clip.scoreStart + desiredScore);
+    const int inputEnd = static_cast<int>(clip.input.size());
+    const int desiredScore = juce::jmin(scoreSamples, inputEnd - clip.scoreStart);
+    const int segmentEnd = juce::jmin(inputEnd, clip.scoreStart + desiredScore);
     const int segmentLength = segmentEnd - clip.segmentStart;
     const int scoreOffset = clip.scoreStart - clip.segmentStart;
 
@@ -242,10 +337,11 @@ RenderedClip renderClip(guitardsp::hq::AmpEngineHQ& amp, const Clip& clip, const
         rendered.model[static_cast<size_t>(i)] = buffer.getSample(0, scoreOffset + i);
 
     float bestAbsCorrelation = -1.0f;
-    int bestLag = 0;
+    int bestLag = clip.baseLag;
     float bestCorrelation = 0.0f;
-    for (int lag = -maxAlignmentLag; lag <= maxAlignmentLag; ++lag)
+    for (int fine = -fineAlignmentLag; fine <= fineAlignmentLag; ++fine)
     {
+        const int lag = clip.baseLag + fine;
         const int targetStart = clip.scoreStart + lag;
         if (targetStart < 0 || targetStart + n > static_cast<int>(clip.target.size()))
             continue;
@@ -272,6 +368,12 @@ RenderedClip renderClip(guitardsp::hq::AmpEngineHQ& amp, const Clip& clip, const
     rendered.correlation = bestCorrelation;
     rendered.target.resize(static_cast<size_t>(n));
     const int targetStart = clip.scoreStart + bestLag;
+    if (targetStart < 0 || targetStart + n > static_cast<int>(clip.target.size()))
+    {
+        rendered.target.clear();
+        rendered.model.clear();
+        return rendered;
+    }
     for (int i = 0; i < n; ++i)
         rendered.target[static_cast<size_t>(i)] = clip.target[static_cast<size_t>(targetStart + i)];
     return rendered;
@@ -336,7 +438,9 @@ Metrics evaluate(const std::vector<Clip>& clips,
         if (clip.fit != fitSplit)
             continue;
         sampleRate = clip.sampleRate;
-        rendered.push_back(renderClip(amp, clip, c));
+        auto result = renderClip(amp, clip, c);
+        if (!result.model.empty() && result.model.size() == result.target.size())
+            rendered.push_back(std::move(result));
     }
 
     double dot = 0.0, modelEnergy = 0.0;
