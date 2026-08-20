@@ -5,6 +5,7 @@
 #include <iostream>
 #include "../hq_preload/dsp/amp/AmpEngineHQ.h"
 #include "../hq_preload/dsp/cab/CabMicEngineHQ.h"
+#include "../hq_preload/dsp/cab/FactoryIrCatalog.h"
 
 namespace
 {
@@ -103,6 +104,37 @@ bool writeImpulseWav(const juce::File& file)
     }
     return (bool)out;
 }
+
+bool validateFactoryCatalog()
+{
+    bool ok = true;
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    ok &= require(guitardsp::hq::FactoryIrCatalog::count == 15, "Factory IR catalog exposes 15 measured captures");
+    for (int i = 0; i < guitardsp::hq::FactoryIrCatalog::count; ++i)
+    {
+        const auto file = guitardsp::hq::FactoryIrCatalog::fileForIndex(i);
+        if (!file.existsAsFile())
+        {
+            std::cout << "FAIL missing Factory IR " << i << " path=" << file.getFullPathName() << '\n';
+            ok = false;
+            continue;
+        }
+        std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+        const bool valid = reader != nullptr
+                        && std::abs(reader->sampleRate - 48000.0) < 0.5
+                        && reader->numChannels == 1
+                        && reader->bitsPerSample == 24
+                        && reader->lengthInSamples > 2048;
+        if (!valid)
+        {
+            std::cout << "FAIL invalid Factory IR " << file.getFileName() << '\n';
+            ok = false;
+        }
+    }
+    ok &= require(ok, "All Factory IR WAVs are 48 kHz mono 24-bit measured captures");
+    return ok;
+}
 }
 
 int main()
@@ -168,6 +200,39 @@ int main()
         ok &= require(sane(b) && rms(b) > 1.0e-7f, "User IR convolution finite and active");
     }
     temp.deleteFile();
+
+    ok &= validateFactoryCatalog();
+    {
+        guitardsp::hq::CabMicEngineHQ cab;
+        cab.prepare(sampleRate, blockSize);
+        auto cp = cab.getParameters();
+        cp.irEngine = guitardsp::hq::CabIrEngine::external;
+        cp.externalIrSize = guitardsp::hq::ExternalIrSize::samples2048;
+        cp.lowCutHz = 25.0f;
+        cp.highCutHz = 18000.0f;
+        cp.mix = 1.0f;
+        cab.setParameters(cp);
+        const auto factoryFile = guitardsp::hq::FactoryIrCatalog::fileForIndex(0);
+        ok &= require(cab.loadExternalImpulse(factoryFile), "Factory measured IR accepted by convolution engine");
+        cab.setEnabled(true);
+
+        juce::AudioBuffer<float> b(2, blockSize);
+        int blocksProcessed = 0;
+        for (; blocksProcessed < 160 && cab.getCurrentIrSize() != 2048; ++blocksProcessed)
+        {
+            fillContinuousSine(b, 0.08f, 440.0f, blocksProcessed);
+            cab.process(b, 0, blockSize);
+            juce::Thread::sleep(2);
+        }
+        std::cout << "INFO factory IR size " << cab.getCurrentIrSize() << " after " << blocksProcessed << " blocks\n";
+        ok &= require(cab.getCurrentIrSize() == 2048, "Factory IR uses selected 2048-sample mode");
+        for (int block = 0; block < 24; ++block)
+        {
+            fillContinuousSine(b, 0.08f, 440.0f, blocksProcessed + block);
+            cab.process(b, 0, blockSize);
+        }
+        ok &= require(sane(b) && rms(b) > 1.0e-7f, "Factory IR convolution finite and active");
+    }
 
     return ok ? 0 : 1;
 }

@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(GUITARDSP_JUCE_PATH "" CACHE PATH "Path to JUCE checkout")
+option(GUITARDSP_FETCH_FACTORY_IRS "Fetch redistributable measured factory cabinet IRs during GUI build" ON)
 
 if (GUITARDSP_JUCE_PATH)
     message(STATUS "Using JUCE from GUITARDSP_JUCE_PATH=${GUITARDSP_JUCE_PATH}")
@@ -39,6 +40,20 @@ target_sources(GuitarDSPPro PRIVATE
 target_include_directories(GuitarDSPPro PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(GuitarDSPPro PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:GuitarDSPPro,JUCE_PRODUCT_NAME>" JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:GuitarDSPPro,JUCE_VERSION>")
 target_link_libraries(GuitarDSPPro PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_gui_extra)
+
+if (GUITARDSP_FETCH_FACTORY_IRS)
+    set(GUITARDSP_FACTORY_IR_RUNTIME_DIR "${CMAKE_BINARY_DIR}/FactoryIR")
+    add_custom_command(TARGET GuitarDSPPro POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            "-DGUITARDSP_FACTORY_IR_OUT=${GUITARDSP_FACTORY_IR_RUNTIME_DIR}"
+            "-DGUITARDSP_FACTORY_IR_CACHE=${CMAKE_BINARY_DIR}/factory-ir-cache"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/FetchFactoryIRs.cmake"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${GUITARDSP_FACTORY_IR_RUNTIME_DIR}"
+            "$<TARGET_FILE_DIR:GuitarDSPPro>/FactoryIR"
+        COMMENT "Installing verified measured Factory cabinet IRs"
+        VERBATIM)
+endif()
 
 juce_add_console_app(GuitarDSPDSPTests PRODUCT_NAME "GuitarDSP-DSP-Tests")
 juce_generate_juce_header(GuitarDSPDSPTests)

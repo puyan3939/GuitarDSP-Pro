@@ -1,4 +1,5 @@
 #include "CabMicEngineHQ.h"
+#include "FactoryIrCatalog.h"
 #include <cmath>
 
 namespace guitardsp::hq
@@ -78,16 +79,23 @@ void CabMicEngineHQ::setParameters(const CabMicParams& p)
 
 bool CabMicEngineHQ::loadExternalImpulse(const juce::File& file)
 {
-    if (!file.existsAsFile()) return false;
+    auto resolvedFile = FactoryIrCatalog::resolveFile(file);
+    if (!resolvedFile.existsAsFile()) return false;
 
     juce::AudioFormatManager formats;
     formats.registerBasicFormats();
-    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(resolvedFile));
     if (!reader || reader->lengthInSamples <= 0 || reader->numChannels == 0)
         return false;
 
+    // Factory captures are copied to the per-user application data directory.
+    // Existing preset serialization therefore keeps a stable path across rebuilds,
+    // while missing old paths can still be recovered by filename from FactoryIR.
+    if (FactoryIrCatalog::indexForFile(resolvedFile) >= 0)
+        resolvedFile = FactoryIrCatalog::installStableCopy(resolvedFile);
+
     const juce::SpinLock::ScopedLockType lock(configLock);
-    externalIrFile = file;
+    externalIrFile = resolvedFile;
     params.irEngine = CabIrEngine::external;
     configVersion.fetch_add(1, std::memory_order_release);
     return true;
