@@ -9,6 +9,12 @@ on:
       - 'CMakeLists.txt'
       - 'hq_preload/dsp/amp/**'
       - 'tests/JVMGainFit.cpp'
+  pull_request:
+    paths:
+      - '.github/workflows/jvm-gain-fit.yml'
+      - 'CMakeLists.txt'
+      - 'hq_preload/dsp/amp/**'
+      - 'tests/JVMGainFit.cpp'
   workflow_dispatch:
 
 permissions:
