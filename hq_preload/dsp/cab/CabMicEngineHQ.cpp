@@ -1,4 +1,5 @@
 #include "CabMicEngineHQ.h"
+#include "FactoryIrCatalog.h"
 #include <cmath>
 
 namespace guitardsp::hq
@@ -8,6 +9,19 @@ CabMicEngineHQ::CabMicEngineHQ()
     for (auto& c : convolution) c = std::make_unique<juce::dsp::Convolution>();
 }
 CabMicEngineHQ::~CabMicEngineHQ() = default;
+
+CabMicParams CabMicEngineHQ::sanitise(CabMicParams p) noexcept
+{
+    p.position = juce::jlimit(0.0f, 1.0f, p.position);
+    p.distance = juce::jlimit(0.0f, 1.0f, p.distance);
+    p.resonance = juce::jlimit(0.0f, 1.0f, p.resonance);
+    p.lowCutHz = juce::jlimit(25.0f, 350.0f, p.lowCutHz);
+    p.highCutHz = juce::jlimit(2500.0f, 18000.0f, p.highCutHz);
+    p.mix = juce::jlimit(0.0f, 1.0f, p.mix);
+    p.lowVolumeFeel = juce::jlimit(0.0f, 1.0f, p.lowVolumeFeel);
+    p.irLevelDb = juce::jlimit(-24.0f, 12.0f, p.irLevelDb);
+    return p;
+}
 
 void CabMicEngineHQ::prepare(double sampleRate, int maximumBlockSize)
 {
@@ -21,7 +35,16 @@ void CabMicEngineHQ::prepare(double sampleRate, int maximumBlockSize)
         lowCut[(size_t)ch].prepare(fs);
         highCut[(size_t)ch].prepare(fs);
     }
+
+    {
+        const juce::SpinLock::ScopedLockType lock(configLock);
+        params = sanitise(params);
+        activeParams = params;
+        activeExternalIrFile = externalIrFile;
+        activeConfigVersion = configVersion.load(std::memory_order_relaxed);
+    }
     updateFilters();
+    updateFeelFilters();
     rebuildImpulse();
     reset();
 }
@@ -33,28 +56,135 @@ void CabMicEngineHQ::reset()
         convolution[(size_t)ch]->reset();
         lowCut[(size_t)ch].reset();
         highCut[(size_t)ch].reset();
+        feelBody[(size_t)ch].reset();
+        feelLowMid[(size_t)ch].reset();
+        feelPresence[(size_t)ch].reset();
     }
     work.clear();
     dryWork.clear();
 }
 
+CabMicParams CabMicEngineHQ::getParameters() const
+{
+    const juce::SpinLock::ScopedLockType lock(configLock);
+    return params;
+}
+
 void CabMicEngineHQ::setParameters(const CabMicParams& p)
 {
-    params = p;
-    params.position = juce::jlimit(0.0f, 1.0f, params.position);
-    params.distance = juce::jlimit(0.0f, 1.0f, params.distance);
-    params.resonance = juce::jlimit(0.0f, 1.0f, params.resonance);
-    params.mix = juce::jlimit(0.0f, 1.0f, params.mix);
+    const juce::SpinLock::ScopedLockType lock(configLock);
+    params = sanitise(p);
+    configVersion.fetch_add(1, std::memory_order_release);
+}
+
+bool CabMicEngineHQ::loadExternalImpulse(const juce::File& file)
+{
+    auto resolvedFile = FactoryIrCatalog::resolveFile(file);
+    if (!resolvedFile.existsAsFile()) return false;
+
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(resolvedFile));
+    if (!reader || reader->lengthInSamples <= 0 || reader->numChannels == 0)
+        return false;
+
+    // Factory captures are copied to the per-user application data directory.
+    // Existing preset serialization therefore keeps a stable path across rebuilds,
+    // while missing old paths can still be recovered by filename from FactoryIR.
+    if (FactoryIrCatalog::indexForFile(resolvedFile) >= 0)
+        resolvedFile = FactoryIrCatalog::installStableCopy(resolvedFile);
+
+    const juce::SpinLock::ScopedLockType lock(configLock);
+    externalIrFile = resolvedFile;
+    params.irEngine = CabIrEngine::external;
+    configVersion.fetch_add(1, std::memory_order_release);
+    return true;
+}
+
+void CabMicEngineHQ::clearExternalImpulse()
+{
+    const juce::SpinLock::ScopedLockType lock(configLock);
+    externalIrFile = juce::File();
+    configVersion.fetch_add(1, std::memory_order_release);
+}
+
+bool CabMicEngineHQ::hasExternalImpulse() const
+{
+    const juce::SpinLock::ScopedLockType lock(configLock);
+    return externalIrFile.existsAsFile();
+}
+
+juce::File CabMicEngineHQ::getExternalIrFile() const
+{
+    const juce::SpinLock::ScopedLockType lock(configLock);
+    return externalIrFile;
+}
+
+juce::String CabMicEngineHQ::getExternalIrName() const
+{
+    const juce::SpinLock::ScopedLockType lock(configLock);
+    return externalIrFile.existsAsFile() ? externalIrFile.getFileName() : juce::String("No IR loaded");
+}
+
+void CabMicEngineHQ::applyPendingConfiguration()
+{
+    const auto requestedVersion = configVersion.load(std::memory_order_acquire);
+    if (requestedVersion == activeConfigVersion)
+        return;
+
+    const juce::SpinLock::ScopedTryLockType lock(configLock);
+    if (!lock.isLocked())
+        return;
+
+    const auto oldParams = activeParams;
+    const auto oldFilePath = activeExternalIrFile.getFullPathName();
+    activeParams = params;
+    activeExternalIrFile = externalIrFile;
+    activeConfigVersion = configVersion.load(std::memory_order_relaxed);
+
+    const bool irChanged = activeParams.irEngine != oldParams.irEngine
+                        || activeParams.cab != oldParams.cab
+                        || activeParams.mic != oldParams.mic
+                        || activeParams.externalIrSize != oldParams.externalIrSize
+                        || std::abs(activeParams.position - oldParams.position) > 1.0e-5f
+                        || std::abs(activeParams.distance - oldParams.distance) > 1.0e-5f
+                        || std::abs(activeParams.resonance - oldParams.resonance) > 1.0e-5f
+                        || activeExternalIrFile.getFullPathName() != oldFilePath;
+
     updateFilters();
-    if (convolution[0]) rebuildImpulse();
+    updateFeelFilters();
+    if (irChanged)
+        rebuildImpulse();
+}
+
+size_t CabMicEngineHQ::externalIrTargetSize() const noexcept
+{
+    switch (activeParams.externalIrSize)
+    {
+        case ExternalIrSize::samples1024: return 1024;
+        case ExternalIrSize::samples2048: return 2048;
+        case ExternalIrSize::full:        return 0;
+    }
+    return 2048;
 }
 
 void CabMicEngineHQ::updateFilters()
 {
     for (int ch = 0; ch < 2; ++ch)
     {
-        lowCut[(size_t)ch].setHz(juce::jlimit(25.0f, 350.0f, params.lowCutHz));
-        highCut[(size_t)ch].setHz(juce::jlimit(2500.0f, 18000.0f, params.highCutHz));
+        lowCut[(size_t)ch].setHz(activeParams.lowCutHz);
+        highCut[(size_t)ch].setHz(activeParams.highCutHz);
+    }
+}
+
+void CabMicEngineHQ::updateFeelFilters()
+{
+    const float a = activeParams.lowVolumeFeel;
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        feelBody[(size_t)ch].setPeak(fs, 115.0f, 0.72f, 3.2f * a);
+        feelLowMid[(size_t)ch].setPeak(fs, 330.0f, 0.78f, 2.0f * a);
+        feelPresence[(size_t)ch].setPeak(fs, 3200.0f, 0.72f, 1.15f * a);
     }
 }
 
@@ -66,7 +196,7 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeClassicImpulse() const
     auto* d = ir.getWritePointer(0);
 
     std::array<float, 5> modes{};
-    switch (params.cab)
+    switch (activeParams.cab)
     {
         case CabType::open1x12:  modes = { 92, 185, 620, 1650, 3600 }; break;
         case CabType::vintage2x12: modes = { 78, 145, 520, 1350, 3150 }; break;
@@ -75,18 +205,18 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeClassicImpulse() const
     }
 
     float micBright = 1.0f, micBody = 1.0f;
-    switch (params.mic)
+    switch (activeParams.mic)
     {
         case MicType::dynamic57: micBright = 1.18f; micBody = 0.90f; break;
         case MicType::ribbon121: micBright = 0.68f; micBody = 1.22f; break;
         case MicType::condenser67: micBright = 0.98f; micBody = 1.08f; break;
     }
 
-    const float cap = params.position;
-    const float distance = params.distance;
+    const float cap = activeParams.position;
+    const float distance = activeParams.distance;
     const int delay = (int) std::round((0.00025 + 0.0022 * distance) * fs);
     const float decayRate = 42.0f + 38.0f * distance;
-    const float resonance = 0.45f + 0.75f * params.resonance;
+    const float resonance = 0.45f + 0.75f * activeParams.resonance;
 
     if (delay < length) d[delay] = (0.35f + 0.38f * cap) * micBright;
     for (int n = delay; n < length; ++n)
@@ -108,8 +238,6 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeClassicImpulse() const
 
 juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
 {
-    // Synthetic IR with measurement-like time/phase structure: direct sound,
-    // cabinet/cone resonances, baffle diffraction and deterministic early reflections.
     const int length = juce::jlimit(2048, 16384, (int)std::round(fs * 0.120));
     juce::AudioBuffer<float> ir(1, length);
     ir.clear();
@@ -125,7 +253,7 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
     };
 
     CabProfile profile{};
-    switch (params.cab)
+    switch (activeParams.cab)
     {
         case CabType::open1x12:
             profile = {{ 88, 176, 310, 610, 980, 1540, 2380, 3470, 4680, 6120 },
@@ -150,24 +278,22 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
     }
 
     float micBright = 1.0f, micBody = 1.0f, micTransient = 1.0f;
-    switch (params.mic)
+    switch (activeParams.mic)
     {
         case MicType::dynamic57: micBright=1.20f; micBody=.90f; micTransient=1.15f; break;
         case MicType::ribbon121: micBright=.66f; micBody=1.25f; micTransient=.78f; break;
         case MicType::condenser67: micBright=1.00f; micBody=1.08f; micTransient=1.02f; break;
     }
 
-    const float cap = params.position;
+    const float cap = activeParams.position;
     const float edge = 1.0f - cap;
-    const float distance = params.distance;
-    const float resonance = 0.42f + 0.88f * params.resonance;
+    const float distance = activeParams.distance;
+    const float resonance = 0.42f + 0.88f * activeParams.resonance;
     const int directDelay = (int)std::round((0.00018 + 0.00235 * distance) * fs);
     const float directGain = (0.48f + 0.34f * cap) * micTransient * (1.0f - 0.18f * distance);
     if (directDelay < length)
         d[directDelay] += directGain;
 
-    // Main modal response. Position changes both spectral weight and phase rather than
-    // acting as a simple brightness control.
     for (int n=directDelay; n<length; ++n)
     {
         const float t=(float)(n-directDelay)/(float)fs;
@@ -188,8 +314,6 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
         d[n] += y * env * 0.050f * resonance;
     }
 
-    // Baffle / cone-breakup structures. These short, damped packets create the fine
-    // peaks/notches and non-minimum-phase behaviour missing from the Classic engine.
     const std::array<float, 4> breakupFreq { 1850.0f, 2780.0f, 4120.0f, 5750.0f };
     const std::array<float, 4> breakupMs   { 0.16f, 0.31f, 0.53f, 0.81f };
     for (size_t b=0;b<breakupFreq.size();++b)
@@ -206,8 +330,6 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
         }
     }
 
-    // Deterministic early reflections. Distance increases their level and spacing;
-    // cabinet type changes their strength. Alternating polarity gives realistic combing.
     const std::array<float, 7> reflectionMs { 0.37f, 0.71f, 1.14f, 1.83f, 2.74f, 4.05f, 6.20f };
     const std::array<float, 7> reflectionAmp{ .20f, -.14f, .115f, -.085f, .061f, -.043f, .029f };
     for(size_t r=0;r<reflectionMs.size();++r)
@@ -219,7 +341,6 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
         const float amp=reflectionAmp[r]*profile.reflectionScale*farBoost*micBody;
         d[idx]+=amp;
 
-        // Give each reflection a tiny resonant tail instead of an isolated impulse.
         const float ringHz=profile.modes[(r+2)%profile.modes.size()];
         const int ring=(int)std::round(0.0030f*fs);
         for(int i=1;i<ring && idx+i<length;++i)
@@ -230,9 +351,7 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
         }
     }
 
-    // A very small deterministic diffuse tail prevents the IR from looking too periodic
-    // without introducing runtime randomness or unstable preset recall.
-    uint32_t state = 0x51f2a37bu + (uint32_t)params.cab*7919u + (uint32_t)params.mic*1543u;
+    uint32_t state = 0x51f2a37bu + (uint32_t)activeParams.cab*7919u + (uint32_t)activeParams.mic*1543u;
     const int tailStart=directDelay+(int)std::round((0.0035f+0.0060f*distance)*fs);
     for(int n=juce::jmax(0,tailStart);n<length;++n)
     {
@@ -245,14 +364,35 @@ juce::AudioBuffer<float> CabMicEngineHQ::makeAdvancedImpulse() const
     return ir;
 }
 
+juce::AudioBuffer<float> CabMicEngineHQ::makeBypassImpulse() const
+{
+    juce::AudioBuffer<float> ir(1, 1);
+    ir.clear();
+    ir.setSample(0, 0, 1.0f);
+    return ir;
+}
+
 juce::AudioBuffer<float> CabMicEngineHQ::makeImpulse() const
 {
-    return params.irEngine == CabIrEngine::advanced ? makeAdvancedImpulse()
-                                                     : makeClassicImpulse();
+    if (activeParams.irEngine == CabIrEngine::advanced) return makeAdvancedImpulse();
+    if (activeParams.irEngine == CabIrEngine::classic) return makeClassicImpulse();
+    return makeBypassImpulse();
 }
 
 void CabMicEngineHQ::rebuildImpulse()
 {
+    if (activeParams.irEngine == CabIrEngine::external && activeExternalIrFile.existsAsFile())
+    {
+        const auto targetSize = externalIrTargetSize();
+        for (int ch = 0; ch < 2; ++ch)
+            convolution[(size_t)ch]->loadImpulseResponse(activeExternalIrFile,
+                juce::dsp::Convolution::Stereo::no,
+                juce::dsp::Convolution::Trim::no,
+                targetSize,
+                juce::dsp::Convolution::Normalise::yes);
+        return;
+    }
+
     for (int ch = 0; ch < 2; ++ch)
     {
         auto ir = makeImpulse();
@@ -265,11 +405,16 @@ void CabMicEngineHQ::rebuildImpulse()
 
 void CabMicEngineHQ::process(juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
 {
-    if (!isEnabled() || numSamples <= 0) return;
+    if (numSamples <= 0) return;
+    applyPendingConfiguration();
+    if (!isEnabled()) return;
+
     const int channels = juce::jmin(2, buffer.getNumChannels());
     jassert(numSamples <= work.getNumSamples());
     if (numSamples > work.getNumSamples()) return;
 
+    const float feel = activeParams.lowVolumeFeel;
+    const float irGain = dbToGain(activeParams.irLevelDb) * (activeParams.polarityInvert ? -1.0f : 1.0f);
     for (int ch = 0; ch < channels; ++ch)
     {
         work.copyFrom(0, 0, buffer, ch, startSample, numSamples);
@@ -282,8 +427,20 @@ void CabMicEngineHQ::process(juce::AudioBuffer<float>& buffer, int startSample, 
         const auto* dryData = dryWork.getReadPointer(0);
         for (int i = 0; i < numSamples; ++i)
         {
-            const float y = highCut[(size_t)ch].process(lowCut[(size_t)ch].process(wet[i]));
-            wet[i] = lerp(dryData[i], y, params.mix);
+            float cabSignal = highCut[(size_t)ch].process(lowCut[(size_t)ch].process(wet[i]));
+            cabSignal *= irGain;
+            float y = lerp(dryData[i], cabSignal, activeParams.mix);
+            if (feel > 0.0001f)
+            {
+                const float shaped = feelPresence[(size_t)ch].process(
+                                     feelLowMid[(size_t)ch].process(
+                                     feelBody[(size_t)ch].process(y)));
+                const float drive = 1.0f + 1.15f * feel;
+                const float saturated = std::tanh(shaped * drive) / std::tanh(drive);
+                const float densityMix = 0.10f + 0.24f * feel;
+                y = lerp(shaped, saturated, densityMix) * dbToGain(0.8f * feel);
+            }
+            wet[i] = y;
         }
         buffer.copyFrom(ch, startSample, work, 0, 0, numSamples);
     }

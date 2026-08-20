@@ -1,0 +1,124 @@
+name: JVM410H Measured Fit
+
+on:
+  push:
+    branches:
+      - agent/signal-analyzer
+    paths:
+      - '.github/workflows/jvm-measured-fit.yml'
+      - 'CMakeLists.txt'
+      - 'hq_preload/dsp/amp/**'
+      - 'tests/JVMMeasuredFit.cpp'
+      - 'tests/JVMPhysicalFit.cpp'
+      - 'ui/SignalAnalyzerPanel.cpp'
+  pull_request:
+    paths:
+      - '.github/workflows/jvm-measured-fit.yml'
+      - 'CMakeLists.txt'
+      - 'hq_preload/dsp/amp/**'
+      - 'tests/JVMMeasuredFit.cpp'
+      - 'tests/JVMPhysicalFit.cpp'
+      - 'ui/SignalAnalyzerPanel.cpp'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guitardsp-jvm-fit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  measured-fit:
+    name: Fit JVM410H OD1 measured clips
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout GuitarDSP-Pro
+        uses: actions/checkout@v5
+
+      - name: Install JUCE build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build git pkg-config ccache curl \
+            libasound2-dev libjack-jackd2-dev \
+            libfreetype6-dev libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev libxi-dev \
+            libglu1-mesa-dev mesa-common-dev libegl-dev
+
+      - name: Checkout JUCE 9.0.0
+        uses: actions/checkout@v5
+        with:
+          repository: juce-framework/JUCE
+          ref: 9.0.0
+          path: _deps/JUCE
+          fetch-depth: 1
+
+      - name: Download published measured input/reference pairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p jvm-data
+          base="https://stepanmk.github.io/grey-box-amp/audio"
+          : > jvm-data/manifest.tsv
+
+          fetch_pair() {
+            split="$1"
+            setting="$2"
+            bass="$3"
+            middle="$4"
+            treble="$5"
+            file_no="$6"
+            in_name="${setting}_G5_file_${file_no}_input.wav"
+            ref_name="${setting}_G5_file_${file_no}.wav"
+            curl -fsSL --retry 3 --retry-delay 2 "${base}/${setting}/${in_name}" -o "jvm-data/${in_name}"
+            curl -fsSL --retry 3 --retry-delay 2 "${base}/${setting}/${ref_name}" -o "jvm-data/${ref_name}"
+            printf '%s %s %s %s %s %s %s\n' \
+              "${split}" "${setting}_file${file_no}" "${bass}" "${middle}" "${treble}" \
+              "${in_name}" "${ref_name}" >> jvm-data/manifest.tsv
+          }
+
+          # Calibration uses only published pairs whose input/reference envelope
+          # correspondence was verified by the alignment diagnostic. Two entire
+          # tone settings remain untouched until holdout scoring.
+          for n in 4 3 2 5; do
+            fetch_pair fit B1_M3_T7   1 3 7 "$n"
+            fetch_pair fit B10_M0_T0 10 0 0 "$n"
+          done
+          for n in 7 9; do
+            fetch_pair fit     B3_M7_T1    3 7 1 "$n"
+            fetch_pair holdout B0_M0_T10   0 0 10 "$n"
+            fetch_pair holdout B10_M0_T10 10 0 10 "$n"
+          done
+
+          echo "Measured manifest:"
+          cat jvm-data/manifest.tsv
+
+      - name: Configure measured-fit target
+        run: |
+          cmake -S . -B build-jvm -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF \
+            -DGUITARDSP_JUCE_PATH="${{ github.workspace }}/_deps/JUCE"
+
+      - name: Build physical measured-fit tool
+        run: cmake --build build-jvm --target GuitarDSPJVMPhysicalFit --parallel 4
+
+      - name: Fit physical JVM model and score unseen settings
+        run: |
+          set -o pipefail
+          ./build-jvm/GuitarDSPJVMPhysicalFit_artefacts/Release/GuitarDSPJVMPhysicalFit \
+            jvm-data/manifest.tsv jvm-physical-fit-report.json | tee jvm-physical-fit-log.txt
+
+      - name: Publish fit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm410h-od1-physical-fit
+          path: |
+            jvm-physical-fit-report.json
+            jvm-physical-fit-log.txt
+          if-no-files-found: error
+          retention-days: 30

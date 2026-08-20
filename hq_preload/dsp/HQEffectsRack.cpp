@@ -23,9 +23,12 @@ void HQEffectsRack::prepare(double sampleRate, int maximumBlockSize) {
 }
 
 void HQEffectsRack::reset() {
+    compressorGainReductionDb.store(0.0f, std::memory_order_relaxed);
     for (int ch = 0; ch < stereoChannels; ++ch) {
         for (auto& pedal : pedals[(size_t)ch]) pedal.reset();
         noiseGate[(size_t)ch].reset();
+        studioComp[(size_t)ch].reset();
+        guitarComp[(size_t)ch].reset();
         chorus[(size_t)ch].reset();
         flanger[(size_t)ch].reset();
         phaser[(size_t)ch].reset();
@@ -54,6 +57,10 @@ void HQEffectsRack::updateDynamicParameters() {
     c.kneeDb = studioControls.kneeDb.load();
     c.makeupDb = studioControls.makeupDb.load();
     c.mix = studioControls.mix.load();
+    c.sidechainHpHz = studioControls.sidechainHpHz.load();
+    c.rms = studioControls.rms.load();
+    c.autoRelease = studioControls.autoRelease.load();
+    c.autoMakeup = studioControls.autoMakeup.load();
 
     GuitarCompressor::Params gc;
     gc.sustain = guitarControls.sustain.load();
@@ -81,6 +88,8 @@ void HQEffectsRack::processPreAmp(juce::AudioBuffer<float>& buffer, int startSam
 
     if (mode == DynamicsMode::studioCompressor || mode == DynamicsMode::guitarCompressor)
         applyDynamics(buffer, startSample, numSamples);
+    else
+        compressorGainReductionDb.store(0.0f, std::memory_order_relaxed);
 
     for (int slot = 0; slot < pedalSlots; ++slot) {
         auto& control = pedalControls[(size_t)slot];
@@ -126,6 +135,7 @@ void HQEffectsRack::applyDynamics(juce::AudioBuffer<float>& buffer, int startSam
     const auto mode = getDynamicsMode();
     if (mode == DynamicsMode::off) return;
     const int channels = juce::jmin(stereoChannels, buffer.getNumChannels());
+    float maxGr = 0.0f;
     for (int ch = 0; ch < channels; ++ch) {
         auto* d = buffer.getWritePointer(ch, startSample);
         for (int i = 0; i < numSamples; ++i) {
@@ -136,7 +146,12 @@ void HQEffectsRack::applyDynamics(juce::AudioBuffer<float>& buffer, int startSam
                 default: break;
             }
         }
+        if (mode == DynamicsMode::studioCompressor)
+            maxGr = juce::jmax(maxGr, studioComp[(size_t)ch].getGainReductionDb());
+        else if (mode == DynamicsMode::guitarCompressor)
+            maxGr = juce::jmax(maxGr, guitarComp[(size_t)ch].getGainReductionDb());
     }
+    compressorGainReductionDb.store(maxGr, std::memory_order_relaxed);
 }
 
 void HQEffectsRack::updatePostParameters() {

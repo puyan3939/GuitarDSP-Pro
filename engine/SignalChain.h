@@ -5,6 +5,7 @@
 #include "../hq_preload/dsp/amp/AmpEngineHQ.h"
 #include "../hq_preload/dsp/HQEffectsRack.h"
 #include "../hq_preload/dsp/cab/CabMicEngineHQ.h"
+#include "SignalTapBuffer.h"
 
 class SignalChain
 {
@@ -22,6 +23,10 @@ public:
     void setAmpMode(AmpMode mode) noexcept { ampMode.store((int)mode, std::memory_order_relaxed); }
     AmpMode getAmpMode() const noexcept { return (AmpMode)ampMode.load(std::memory_order_relaxed); }
 
+    void setAnalyzerTaps(SignalTapBuffer* taps) noexcept { analyzerTaps = taps; }
+    void setAnalysisMode(bool enabled) noexcept { analysisMode = enabled; }
+    void copySettingsTo(SignalChain& destination);
+
     AmpEngine& getAmpEngine() noexcept { return ampEngine; }
     guitardsp::hq::AmpEngineHQ& getHQAmpEngine() noexcept { return hqAmpEngine; }
     guitardsp::hq::HQEffectsRack& getHQEffectsRack() noexcept { return hqEffects; }
@@ -33,6 +38,7 @@ private:
     void processLegacyAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void processHQAmp(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void applyStartupFadeAndLimiter(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
+    void pushTap(SignalTapBuffer::TapPoint point, const juce::AudioBuffer<float>& buffer, int startSample, int numSamples) noexcept;
 
     juce::SmoothedValue<float> inputGain;
     juce::SmoothedValue<float> startupFade;
@@ -45,7 +51,10 @@ private:
     SafetyLimiter limiter;
 
     std::atomic<float> inputGainDb { -6.0f };
+    std::atomic<float> outputGainDb { -18.0f };
     std::atomic<bool> bypass { false };
     std::atomic<bool> monoInputToStereo { true };
     std::atomic<int> ampMode { (int)AmpMode::legacy };
+    SignalTapBuffer* analyzerTaps = nullptr;
+    bool analysisMode = false;
 };

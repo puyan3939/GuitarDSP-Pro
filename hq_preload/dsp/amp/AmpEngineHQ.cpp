@@ -20,6 +20,7 @@ struct AmpEngineHQ::Channel
 {
     std::array<TubeStage,20> st;
     Biquad bass,mid,treble;
+    JvmToneStack jvmTone;
     Slew sagEnv,biasEnv,transformerFlux;
     OnePoleLP nfbLow;
     float nfbHistory=0.0f;
@@ -41,10 +42,130 @@ static AmpHQParams defaults()
     return p;
 }
 
-// 16x internal processing at 48 kHz = 768 kHz. This is intentionally
-// aggressive for a quality A/B test; revert to 8x if the audible benefit
-// does not justify the realtime CPU cost.
-AmpEngineHQ::AmpEngineHQ():params(defaults()),oversampling(4){}
+AmpHQParams AmpEngineHQ::makeBassman5F6AReference()
+{
+    AmpHQParams p = defaults();
+    for (auto& s : p.stage)
+        s = { 20.0f, 18000.0f, 0.25f, 0.0f, 0.0f, 0.0f, 18000.0f, 4.0f };
+
+    p.stage[0] = { 32.0f, 14500.0f, 0.82f, 0.006f, 0.12f, 0.045f, 11200.0f, 1.70f };
+    p.stage[1] = { 48.0f, 16000.0f, 0.25f, 0.0f, 0.0f, 0.0f, 15500.0f, 4.0f };
+    p.stage[2] = { 42.0f, 13200.0f, 1.32f, 0.010f, 0.18f, 0.070f, 9800.0f, 1.08f };
+    p.stage[3] = { 24.0f, 17000.0f, 0.30f, 0.002f, 0.04f, 0.025f, 16000.0f, 3.22f };
+
+    p.bassDb = 3.4f;
+    p.midDb = -8.6f;
+    p.trebleDb = 4.2f;
+    p.stage[10] = { 28.0f, 17500.0f, 0.25f, 0.0f, 0.0f, 0.0f, 17000.0f, 3.35f };
+
+    p.stage[11] = { 45.0f, 14500.0f, 0.78f, 0.006f, 0.10f, 0.045f, 11800.0f, 1.45f };
+    p.stage[12] = { 28.0f, 17500.0f, 0.25f, 0.0f, 0.0f, 0.0f, 17000.0f, 4.0f };
+    p.stage[13] = { 32.0f, 16500.0f, 0.25f, 0.0f, 0.0f, 0.0f, 16000.0f, 4.0f };
+    p.stage[14] = { 34.0f, 14000.0f, 1.10f, 0.008f, 0.16f, 0.080f, 10800.0f, 1.02f };
+
+    p.stage[16] = { 38.0f, 14500.0f, 0.42f, 0.0f, 0.03f, 0.020f, 13200.0f, 2.35f };
+    p.stage[17] = { 48.0f, 11800.0f, 1.78f, 0.018f, 0.22f, 0.16f, 7800.0f, 0.92f };
+    p.stage[18] = { 24.0f, 17500.0f, 0.25f, 0.0f, 0.0f, 0.0f, 17000.0f, 4.0f };
+    p.stage[19] = { 30.0f, 8200.0f, 0.42f, 0.002f, 0.05f, 0.025f, 7600.0f, 2.20f };
+
+    p.sag = 0.36f;
+    p.sagRecoveryMs = 125.0f;
+    p.damping = 0.52f;
+    p.presence = 0.34f;
+    p.resonance = 0.50f;
+    p.biasExcursion = 0.18f;
+    p.transformerSaturation = 0.20f;
+    p.outputDb = -10.5f;
+    return p;
+}
+
+AmpHQParams AmpEngineHQ::makeJVM410HOD1Reference(float bass, float middle, float treble,
+                                                  float gain, float master,
+                                                  float presence, float resonance)
+{
+    bass = juce::jlimit(0.0f, 1.0f, bass);
+    middle = juce::jlimit(0.0f, 1.0f, middle);
+    treble = juce::jlimit(0.0f, 1.0f, treble);
+    gain = juce::jlimit(0.0f, 1.0f, gain);
+    master = juce::jlimit(0.0f, 1.0f, master);
+    presence = juce::jlimit(0.0f, 1.0f, presence);
+    resonance = juce::jlimit(0.0f, 1.0f, resonance);
+
+    AmpHQParams p = defaults();
+    for (auto& s : p.stage)
+        s = { 20.0f, 18000.0f, 0.25f, 0.0f, 0.0f, 0.0f, 18000.0f, 4.0f };
+
+    p.stage[0] = { 28.0f, 16000.0f, 1.30f, 0.008f, 0.12f, 0.035f, 13500.0f, 1.28f };
+    p.stage[2] = { 52.0f, 13200.0f, 2.35f, 0.018f, 0.22f, 0.075f, 10200.0f, 0.94f };
+    p.stage[4] = { 78.0f, 11200.0f, 3.10f, 0.032f, 0.30f, 0.110f, 8600.0f, 0.78f };
+    p.stage[6] = { 105.0f, 9800.0f, 3.55f, 0.045f, 0.38f, 0.145f, 7200.0f, 0.70f };
+    p.stage[8] = { 58.0f, 13200.0f, 1.38f, 0.010f, 0.14f, 0.060f, 10800.0f, 0.94f };
+
+    p.jvmToneStackEnabled = true;
+    p.jvmToneStack.bass = bass;
+    p.jvmToneStack.middle = middle;
+    p.jvmToneStack.treble = treble;
+    p.jvmToneStack.bassTaper = 1.743625f;
+    p.jvmToneStack.middleTaper = 0.350000f;
+    p.jvmToneStack.trebleTaper = 0.350000f;
+    p.jvmToneStack.r1Scale = 1.080000f;
+    p.jvmToneStack.c1Scale = 1.132200f;
+    p.jvmToneStack.c23Scale = 1.080000f;
+
+    constexpr float driveScale = 1.483500f;
+    constexpr float biasShift = 0.031787f;
+    constexpr float lowPassScale = 1.3680035f;
+    constexpr float asymmetryScale = 0.74700875f;
+    constexpr float memoryScale = 1.441923f;
+    static constexpr std::array<int, 5> measuredPreampStages { 0, 2, 4, 6, 8 };
+    for (const int index : measuredPreampStages)
+    {
+        auto& s = p.stage[(size_t)index];
+        s.drive = juce::jlimit(0.15f, 12.0f, s.drive * driveScale);
+        s.bias = juce::jlimit(-0.30f, 0.30f, s.bias + biasShift);
+        s.preLpHz = juce::jlimit(1800.0f, 20000.0f, s.preLpHz * lowPassScale);
+        s.postLpHz = juce::jlimit(1500.0f, 20000.0f, s.postLpHz * lowPassScale);
+        s.asymmetry = juce::jlimit(0.0f, 1.0f, s.asymmetry * asymmetryScale);
+        s.memory = juce::jlimit(0.0f, 1.0f, s.memory * memoryScale);
+    }
+
+    // Gain-axis calibration v1. ToneTwisT's measured B/M/T=5 PreampOut sweep
+    // (Gain 0/4/5/8/10 fit, Gain 2/6 held out) selected this 37.949 dB span
+    // and 0.8 taper exponent. Gain=5 remains exactly neutral so the existing
+    // speaker-out/full-amp G5 calibration above stays the absolute anchor.
+    constexpr float gainSpanDb = 37.948997f;
+    constexpr float gainCurve = 0.800000f;
+    const float gainPosition = std::pow(gain, gainCurve);
+    const float gainFivePosition = std::pow(0.5f, gainCurve);
+    const float gainDeltaDb = gainSpanDb * (gainPosition - gainFivePosition);
+    p.stage[2].drive = juce::jlimit(0.15f, 12.0f, p.stage[2].drive * dbToGain(gainDeltaDb * 0.68f));
+    p.stage[4].drive = juce::jlimit(0.15f, 12.0f, p.stage[4].drive * dbToGain(gainDeltaDb * 0.32f));
+
+    p.stage[10] = { 28.0f, 16500.0f, 0.30f, 0.0f, 0.02f, 0.020f, 15000.0f, 17.49f };
+    p.stage[11] = { 44.0f, 14200.0f, 1.05f, 0.010f, 0.16f, 0.070f, 11200.0f, 1.22f };
+    p.stage[14] = { 38.0f, 13200.0f, 1.22f, 0.012f, 0.20f, 0.090f, 10200.0f, 1.02f };
+
+    p.stage[16] = { 36.0f, 14500.0f, 0.42f, 0.0f, 0.04f, 0.025f, 13200.0f, 2.30f };
+    p.stage[17] = { 46.0f, 11800.0f, 1.42f, 0.014f, 0.18f, 0.120f, 8300.0f, 0.94f };
+    p.stage[19] = { 30.0f, 8800.0f, 0.42f, 0.002f, 0.05f, 0.030f, 8000.0f, 2.18f };
+
+    // Master / Presence / Resonance are explicitly physical-model controls:
+    // public JVM data currently holds them fixed at 5, so 0.5 preserves the
+    // measured operating point while other values remain unverified.
+    p.stage[16].output *= dbToGain((master - 0.5f) * 18.0f);
+    p.sag = 0.18f;
+    p.sagRecoveryMs = 72.0f;
+    p.damping = 0.58f;
+    p.presence = juce::jlimit(0.0f, 1.0f, 0.08f + 0.80f * presence);
+    p.resonance = resonance;
+    p.biasExcursion = 0.12f;
+    p.transformerSaturation = 0.24f;
+    p.outputDb = -12.0f;
+    return p;
+}
+
+AmpEngineHQ::AmpEngineHQ(int oversamplingOrder)
+    : params(defaults()), oversampling(juce::jlimit(0, 4, oversamplingOrder)) {}
 AmpEngineHQ::~AmpEngineHQ() = default;
 
 void AmpEngineHQ::prepare(double sampleRate,int maxBlockSize)
@@ -55,6 +176,7 @@ void AmpEngineHQ::prepare(double sampleRate,int maxBlockSize)
     {
         cp=std::make_unique<Channel>();
         for(auto& s:cp->st)s.prepare(internalFs);
+        cp->jvmTone.prepare(internalFs);
         cp->sagEnv.prepare(internalFs,params.sagRecoveryMs);
         cp->biasEnv.prepare(internalFs,22.0f);
         cp->transformerFlux.prepare(internalFs,6.0f);
@@ -69,14 +191,14 @@ void AmpEngineHQ::reset()
     for(auto& cp:channels)if(cp)
     {
         for(auto&s:cp->st){s.hp.reset();s.preLp.reset();s.postLp.reset();s.memory.reset();}
-        cp->bass.reset();cp->mid.reset();cp->treble.reset();cp->sagEnv.reset();cp->biasEnv.reset();cp->transformerFlux.reset();cp->nfbLow.reset();
+        cp->bass.reset();cp->mid.reset();cp->treble.reset();cp->jvmTone.reset();cp->sagEnv.reset();cp->biasEnv.reset();cp->transformerFlux.reset();cp->nfbLow.reset();
         cp->nfbHistory=0;cp->piMemory=0;
     }
 }
 
 void AmpEngineHQ::setParameters(const AmpHQParams& p)
 {
-    params=p;for(auto& cp:channels)if(cp){for(size_t i=0;i<20;++i)cp->st[i].set(params.stage[i]);cp->sagEnv.prepare(oversampling.getInternalSampleRate(),params.sagRecoveryMs);}updateFilters();
+    params=p;for(auto& cp:channels)if(cp){for(size_t i=0;i<20;++i)cp->st[i].set(params.stage[i]);cp->jvmTone.setConfig(params.jvmToneStack);cp->sagEnv.prepare(oversampling.getInternalSampleRate(),params.sagRecoveryMs);}updateFilters();
 }
 
 void AmpEngineHQ::updateFilters()
@@ -93,7 +215,7 @@ void AmpEngineHQ::updateFilters()
 float AmpEngineHQ::processChannel(Channel& c,float x)
 {
     for(int i=0;i<=9;++i)x=c.st[(size_t)i].process(x);
-    x=c.treble.process(c.mid.process(c.bass.process(x)));
+    x=params.jvmToneStackEnabled ? c.jvmTone.process(x) : c.treble.process(c.mid.process(c.bass.process(x)));
     x=c.st[10].process(x);x=c.st[11].process(x);x=c.st[12].process(x);x=c.st[13].process(x);
 
     const float piIn=c.st[14].process(x);
@@ -109,7 +231,9 @@ float AmpEngineHQ::processChannel(Channel& c,float x)
     const float lowFeedback=c.nfbLow.process(c.nfbHistory);
     const float highFeedback=c.nfbHistory-lowFeedback;
     const float presenceAmount=juce::jlimit(0.0f,1.0f,params.presence);
-    const float feedbackSignal=lowFeedback+(1.0f-0.78f*presenceAmount)*highFeedback;
+    const float resonanceAmount=juce::jlimit(0.0f,1.0f,params.resonance);
+    const float lowFeedbackScale=juce::jlimit(0.55f,1.45f,1.0f-0.85f*(resonanceAmount-0.5f));
+    const float feedbackSignal=lowFeedback*lowFeedbackScale+(1.0f-0.78f*presenceAmount)*highFeedback;
     const float nfb=juce::jlimit(0.0f,0.82f,params.damping*0.68f);
     x-=feedbackSignal*nfb;
 

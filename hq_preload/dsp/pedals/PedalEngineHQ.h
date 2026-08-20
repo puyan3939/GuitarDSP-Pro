@@ -18,7 +18,11 @@ struct PedalParams
 class PedalEngineHQ
 {
 public:
-    PedalEngineHQ(): oversampling(4) {} // 16x for nonlinear pedal topologies (48 kHz -> 768 kHz internal)
+    explicit PedalEngineHQ(int oversamplingOrder=4)
+        : oversampling(juce::jlimit(0, 4, oversamplingOrder)) {} // default 16x
+
+    int getOversamplingFactor() const noexcept { return oversampling.getFactor(); }
+    float getOversamplingLatencySamples() const noexcept { return oversampling.getLatencySamples(); }
 
     void prepare(double fs,int maxBlock)
     {

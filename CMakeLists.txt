@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.22)
-project(GuitarDSPPro VERSION 0.2.0 LANGUAGES C CXX)
+project(GuitarDSPPro VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(GUITARDSP_JUCE_PATH "" CACHE PATH "Path to JUCE checkout")
+option(GUITARDSP_FETCH_FACTORY_IRS "Fetch redistributable measured factory cabinet IRs during GUI build" ON)
 
 if (GUITARDSP_JUCE_PATH)
     message(STATUS "Using JUCE from GUITARDSP_JUCE_PATH=${GUITARDSP_JUCE_PATH}")
@@ -29,9 +30,10 @@ target_sources(GuitarDSPPro PRIVATE
     dsp/SafetyLimiter.cpp dsp/LevelMeter.cpp
     dsp/amp/AmpStage.cpp dsp/amp/AmpEngine.cpp
     hq_preload/dsp/amp/AmpEngineHQ.cpp
+    hq_preload/dsp/amp/JvmToneStack.cpp
     hq_preload/dsp/HQEffectsRack.cpp
     hq_preload/dsp/cab/CabMicEngineHQ.cpp
-    ui/MainView.cpp ui/NavigationBar.cpp
+    ui/MainView.cpp ui/NavigationBar.cpp ui/SignalAnalyzerPanel.cpp ui/MeasurementLabPanel.cpp
     ui/pages/AmpPage.cpp ui/pages/PedalPage.cpp ui/pages/CabPage.cpp ui/pages/EffectsPage.cpp ui/pages/SettingsPage.cpp
 )
 
@@ -39,19 +41,79 @@ target_include_directories(GuitarDSPPro PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(GuitarDSPPro PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:GuitarDSPPro,JUCE_PRODUCT_NAME>" JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:GuitarDSPPro,JUCE_VERSION>")
 target_link_libraries(GuitarDSPPro PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_gui_extra)
 
+if (GUITARDSP_FETCH_FACTORY_IRS)
+    set(GUITARDSP_FACTORY_IR_RUNTIME_DIR "${CMAKE_BINARY_DIR}/FactoryIR")
+    add_custom_command(TARGET GuitarDSPPro POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            "-DGUITARDSP_FACTORY_IR_OUT=${GUITARDSP_FACTORY_IR_RUNTIME_DIR}"
+            "-DGUITARDSP_FACTORY_IR_CACHE=${CMAKE_BINARY_DIR}/factory-ir-cache"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/FetchFactoryIRs.cmake"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${GUITARDSP_FACTORY_IR_RUNTIME_DIR}"
+            "$<TARGET_FILE_DIR:GuitarDSPPro>/FactoryIR"
+        COMMENT "Installing verified measured Factory cabinet IRs"
+        VERBATIM)
+endif()
+
 juce_add_console_app(GuitarDSPDSPTests PRODUCT_NAME "GuitarDSP-DSP-Tests")
 juce_generate_juce_header(GuitarDSPDSPTests)
-target_sources(GuitarDSPDSPTests PRIVATE tests/DSPCharacterSmoke.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/HQEffectsRack.cpp hq_preload/dsp/cab/CabMicEngineHQ.cpp)
+target_sources(GuitarDSPDSPTests PRIVATE tests/DSPCharacterSmoke.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/amp/JvmToneStack.cpp hq_preload/dsp/HQEffectsRack.cpp hq_preload/dsp/cab/CabMicEngineHQ.cpp)
 target_include_directories(GuitarDSPDSPTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(GuitarDSPDSPTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
-target_link_libraries(GuitarDSPDSPTests PRIVATE juce::juce_dsp juce::juce_audio_basics)
+target_link_libraries(GuitarDSPDSPTests PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
+
+juce_add_console_app(GuitarDSPReferenceTests PRODUCT_NAME "GuitarDSP-Reference-IR-Tests")
+juce_generate_juce_header(GuitarDSPReferenceTests)
+target_sources(GuitarDSPReferenceTests PRIVATE tests/ReferenceAndIrSmoke.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/amp/JvmToneStack.cpp hq_preload/dsp/cab/CabMicEngineHQ.cpp)
+target_include_directories(GuitarDSPReferenceTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(GuitarDSPReferenceTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(GuitarDSPReferenceTests PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
+
+# Offline measured-data calibration tools. They are intentionally not CTests so
+# the fast PR check never depends on external network data.
+juce_add_console_app(GuitarDSPJVMFit PRODUCT_NAME "GuitarDSP-JVM-Measured-Fit")
+juce_generate_juce_header(GuitarDSPJVMFit)
+target_sources(GuitarDSPJVMFit PRIVATE tests/JVMMeasuredFit.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/amp/JvmToneStack.cpp)
+target_include_directories(GuitarDSPJVMFit PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(GuitarDSPJVMFit PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(GuitarDSPJVMFit PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
+
+juce_add_console_app(GuitarDSPJVMPhysicalFit PRODUCT_NAME "GuitarDSP-JVM-Physical-Fit")
+juce_generate_juce_header(GuitarDSPJVMPhysicalFit)
+target_sources(GuitarDSPJVMPhysicalFit PRIVATE tests/JVMPhysicalFit.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/amp/JvmToneStack.cpp)
+target_include_directories(GuitarDSPJVMPhysicalFit PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(GuitarDSPJVMPhysicalFit PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(GuitarDSPJVMPhysicalFit PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
+
+juce_add_console_app(GuitarDSPJVMGainFit PRODUCT_NAME "GuitarDSP-JVM-Gain-Fit")
+juce_generate_juce_header(GuitarDSPJVMGainFit)
+target_sources(GuitarDSPJVMGainFit PRIVATE tests/JVMGainFit.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/amp/JvmToneStack.cpp)
+target_include_directories(GuitarDSPJVMGainFit PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(GuitarDSPJVMGainFit PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(GuitarDSPJVMGainFit PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
+
+juce_add_console_app(GuitarDSPMeasurementLab PRODUCT_NAME "GuitarDSP-Measurement-Lab")
+juce_generate_juce_header(GuitarDSPMeasurementLab)
+target_sources(GuitarDSPMeasurementLab PRIVATE tests/MeasurementLab.cpp hq_preload/dsp/amp/AmpEngineHQ.cpp hq_preload/dsp/amp/JvmToneStack.cpp)
+target_include_directories(GuitarDSPMeasurementLab PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(GuitarDSPMeasurementLab PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(GuitarDSPMeasurementLab PRIVATE juce::juce_dsp juce::juce_audio_basics juce::juce_audio_formats)
+
+add_dependencies(GuitarDSPDSPTests GuitarDSPPro)
+add_dependencies(GuitarDSPReferenceTests GuitarDSPPro)
 
 include(CTest)
 if (BUILD_TESTING)
     add_test(NAME hq_dsp_smoke COMMAND GuitarDSPDSPTests)
+    add_test(NAME reference_ir_smoke COMMAND GuitarDSPReferenceTests)
 endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(GuitarDSPPro PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(GuitarDSPDSPTests PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(GuitarDSPReferenceTests PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(GuitarDSPJVMFit PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(GuitarDSPJVMPhysicalFit PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(GuitarDSPJVMGainFit PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(GuitarDSPMeasurementLab PRIVATE -Wall -Wextra -Wpedantic)
 endif()
