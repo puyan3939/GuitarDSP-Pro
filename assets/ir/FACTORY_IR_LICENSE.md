@@ -2,20 +2,23 @@
 
 Factory IR pack: **Jester Dyne Productions – Jester's Brutal IR Pack 1.0**
 
-Official source:
+Original publisher page:
 https://www.jester-dyne-productions.com/brutal-ir-pack/
 
-Source archive used by the build:
-https://www.jester-dyne-productions.com/content/files/2023/04/JestersBrutalPack_1.0.zip
+The original publisher describes the pack as free for commercial use. Darwin's Cat / OrbitCab additionally maintains an explicit per-asset license ledger identifying **Jesters Brutal Pack 1.0 as CC0 / public domain and cleared to bundle + redistribute commercially**.
 
-Verified source archive SHA-256:
-`299dc053f01ebd1e980459adc48f9c6b8a8c7af91917b4f946512eefdbb311ea`
+GuitarDSP-Pro obtains the 48 kHz / 24-bit / mono captures from the following pinned public GitHub source:
 
-The publisher describes the pack as free for commercial use. Darwin's Cat's Cabinet IR Utility documentation identifies the Brutal pack as CC0 / public-domain material. The build intentionally downloads the original archive from Jester Dyne's server and verifies the checksum before installing these captures.
+- Repository: `darwinscat/orbitcab`
+- Commit: `9081c0bdd84b325836d56aaebdb3955dbd9ccc0c`
+- Source directory: `resources/ir/`
+- License proof in that repository: `docs/ASSET-LICENSES.md`
+
+The Git commit is pinned so the Factory IR source cannot silently change between builds. CMake also prints the downloaded source archive SHA-256 into the build log for reproducibility.
 
 ## Capture set
 
-The pack contains 15 cabinet impulse responses. GuitarDSP-Pro installs the original 48 kHz mono, 24-bit WAV captures without modifying their sample data. The pack documentation describes a modified oversized Behringer BG412S 4x12 cabinet using Celestion Vintage 30, Celestion Rockdriver Jr G12F-60, and Eminence DV-77 speakers, captured with several dynamic microphones. Exact speaker/microphone assignment for an individual creatively-named IR is not asserted by GuitarDSP-Pro unless supplied by the original pack metadata.
+The pack contains 15 cabinet impulse responses. GuitarDSP-Pro installs the 48 kHz mono, 24-bit WAV captures without modifying their sample data. The pack documentation describes a modified oversized Behringer BG412S 4x12 cabinet using Celestion Vintage 30, Celestion Rockdriver Jr G12F-60, and Eminence DV-77 speakers, captured with several dynamic microphones. Exact speaker/microphone assignment for an individual creatively-named IR is not asserted by GuitarDSP-Pro unless supplied by the original pack metadata.
 
 Installed captures:
 
@@ -37,4 +40,4 @@ Installed captures:
 
 GuitarDSP-Pro's 1024 / 2048 / FULL selector controls how much of the selected capture is passed to JUCE Convolution. FULL preserves the original long capture and room tail; the shorter modes are intended for lower-cost guitar-cab processing and A/B tests.
 
-Speaker, microphone, cabinet, and product names are descriptive references only. GuitarDSP-Pro is not affiliated with or endorsed by those manufacturers or Jester Dyne Productions.
+Speaker, microphone, cabinet, and product names are descriptive references only. GuitarDSP-Pro is not affiliated with or endorsed by those manufacturers, Jester Dyne Productions, or Darwin's Cat.
