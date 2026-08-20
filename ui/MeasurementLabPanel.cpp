@@ -20,7 +20,7 @@ MeasurementLabPanel::MeasurementLabPanel(AudioEngine& engine)
         label->setJustificationType(juce::Justification::topLeft);
     }
 
-    osInfo.setText("Oversampling A/B is measured offline in CI at 1x / 2x / 4x / 8x / 16x (latency, CPU, THD, alias energy, spectrum delta).",
+    osInfo.setText("OS POLICY: HQ Amp 8x realtime default; nonlinear pedals remain 16x. CI sweeps 1x/2x/4x/8x/16x across multiple frequencies and drive levels, including full-band spur and 16x-null metrics.",
                    juce::dontSendNotification);
 
     addAndMakeVisible(title); addAndMakeVisible(instructions); addAndMakeVisible(deviceInfo); addAndMakeVisible(dspInfo);
@@ -123,5 +123,5 @@ void MeasurementLabPanel::resized()
     measureButton.setBounds(buttons.removeFromLeft(180)); buttons.removeFromLeft(10);
     restoreButton.setBounds(buttons.removeFromLeft(160)); buttons.removeFromLeft(10);
     refreshDspButton.setBounds(buttons.removeFromLeft(190));
-    r.removeFromTop(22); osInfo.setBounds(r.removeFromTop(54));
+    r.removeFromTop(22); osInfo.setBounds(r.removeFromTop(64));
 }
