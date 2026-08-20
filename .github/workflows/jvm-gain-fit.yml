@@ -50,7 +50,7 @@ jobs:
           ref: 9.0.0
           path: _deps/JUCE
           fetch-depth: 1
-      - name: Fetch only measured Gain WAV pairs from ToneTwisT ZIP
+      - name: Fetch compact measured Gain set from ToneTwisT ZIP
         shell: python
         run: |
           import pathlib, re, shutil
@@ -62,8 +62,6 @@ jobs:
           out.mkdir()
 
           pattern = re.compile(r'B([0-9.]+)_M([0-9.]+)_T([0-9.]+)_G([0-9.]+)', re.I)
-          # These are the Gain positions with a usable dry/wet pair in the
-          # ToneTwisT archive. The continuous model still spans the full 0..10 knob.
           wanted = [0.0, 2.0, 4.0, 5.0, 6.0, 8.0, 10.0]
           holdout = {2.0, 6.0}
 
@@ -73,6 +71,7 @@ jobs:
 
           with RemoteZip(url) as rz:
               names = [n for n in rz.namelist() if not n.endswith('/')]
+              infos = {n: rz.getinfo(n) for n in names}
               inputs_by_base = {}
               for n in names:
                   if n.lower().endswith('.input.wav'):
@@ -96,35 +95,59 @@ jobs:
                   if not matches:
                       continue
                   target_parts = pathlib.PurePosixPath(target).parts
-                  split_tokens = [p for p in target_parts if p.lower() in ('trainval','train','val','test')]
-                  input_path = matches[0]
+                  split_tokens = [p.lower() for p in target_parts if p.lower() in ('trainval','train','val','test')]
                   if split_tokens:
                       same = [p for p in matches if any('/'+s+'/' in '/'+p.lower()+'/' for s in split_tokens)]
-                      if same: input_path = same[0]
-                  centre_distance = abs(b-5.0) + abs(mid-5.0) + abs(treble-5.0)
-                  candidates.append((gain, centre_distance, target, input_path, b, mid, treble))
+                      if same: matches = same
+                  for input_path in matches:
+                      centre_distance = abs(b-5.0) + abs(mid-5.0) + abs(treble-5.0)
+                      compressed_bytes = infos[target].compress_size + infos[input_path].compress_size
+                      candidates.append((gain, centre_distance, compressed_bytes, target, input_path, b, mid, treble))
+
+              # Prefer one common dry input across all Gain positions. This avoids
+              # downloading the same several-minute dry recording seven times.
+              by_input = {}
+              for c in candidates:
+                  by_input.setdefault(c[4], {}).setdefault(c[0], []).append(c)
+              complete = []
+              for input_path, by_gain in by_input.items():
+                  if all(g in by_gain for g in wanted):
+                      picked = {g: min(by_gain[g], key=lambda c: (c[1], infos[c[3]].compress_size)) for g in wanted}
+                      target_bytes = sum(infos[picked[g][3]].compress_size for g in wanted)
+                      score = infos[input_path].compress_size + target_bytes
+                      complete.append((score, sum(picked[g][1] for g in wanted), input_path, picked))
 
               selected = {}
-              for gain in wanted:
-                  choices = sorted((c for c in candidates if c[0] == gain), key=lambda c: c[1])
-                  if not choices:
-                      available = sorted(set(c[0] for c in candidates))
-                      raise SystemExit(f'Missing Gain={gain}; available Gain values: {available}')
-                  selected[gain] = choices[0]
+              shared_input = None
+              if complete:
+                  _, _, shared_input, selected = min(complete, key=lambda x: (x[0], x[1]))
+                  print('Using one shared dry input:', shared_input)
+              else:
+                  print('No one dry source covers all Gain positions; choosing the smallest valid pair per Gain.')
+                  for gain in wanted:
+                      choices = [c for c in candidates if c[0] == gain]
+                      if not choices:
+                          available = sorted(set(c[0] for c in candidates))
+                          raise SystemExit(f'Missing Gain={gain}; available Gain values: {available}')
+                      selected[gain] = min(choices, key=lambda c: (c[2], c[1]))
 
+              input_destinations = {}
               lines = ['# split name bass middle treble gain input target']
               for gain in wanted:
-                  _, distance, target, input_path, b, mid, treble = selected[gain]
+                  _, distance, compressed_bytes, target, input_path, b, mid, treble = selected[gain]
                   tag = str(int(gain))
-                  in_dest = out / f'g{tag}_input.wav'
+                  if input_path not in input_destinations:
+                      in_dest = out / f'dry{len(input_destinations)}.wav'
+                      print(f'Downloading dry ({infos[input_path].compress_size / 1048576:.1f} MiB compressed):', input_path)
+                      with rz.open(input_path) as src, in_dest.open('wb') as dst: shutil.copyfileobj(src, dst)
+                      input_destinations[input_path] = in_dest
+                  in_dest = input_destinations[input_path]
                   target_dest = out / f'g{tag}_target.wav'
-                  with rz.open(input_path) as src, in_dest.open('wb') as dst: shutil.copyfileobj(src, dst)
+                  print(f'Downloading Gain {gain:g} wet ({infos[target].compress_size / 1048576:.1f} MiB compressed):', target)
                   with rz.open(target) as src, target_dest.open('wb') as dst: shutil.copyfileobj(src, dst)
                   split = 'holdout' if gain in holdout else 'fit'
                   lines.append(f'{split} G{tag} {b:g} {mid:g} {treble:g} {gain:g} {in_dest.name} {target_dest.name}')
-                  print(f'Gain {gain:g}: B={b:g} M={mid:g} T={treble:g}, centre distance={distance:g}')
-                  print('  dry :', input_path)
-                  print('  wet :', target)
+                  print(f'Gain {gain:g}: B={b:g} M={mid:g} T={treble:g}, centre distance={distance:g}, pair={compressed_bytes / 1048576:.1f} MiB')
 
               (out / 'manifest.tsv').write_text('\n'.join(lines) + '\n', encoding='utf-8')
               print((out / 'manifest.tsv').read_text())
